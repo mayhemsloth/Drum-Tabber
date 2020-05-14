@@ -116,6 +116,7 @@ HH|------------|------------|------------|o-----o-----|
 S |xxxoOxxxooOx|xoxooxxooOxx|Oxoooooo----|o-----o-oooo|
 B |------------|------------|--------oooo|--oooo------|
   |1e+a2e+a3e+a|1e+a2e+a3e+a|1e+a2e+a3e+a|1e+a2e+a3e+a|
+
 S |O-----------|----|
 B |o-----------|----|
   |1e+a2e+a3e+a|1e+a|
