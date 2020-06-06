@@ -1,3 +1,3 @@
 # Drum-Tabber
 
-This repository is for an automatic drum transcription project created by me.
+This repository is for an automatic drum transcription project created by me. The main purpose of the project is to develop and display my data science and machine learning skills and knowledge with a challenging, lofty goal. I am interested in creating an automatic drum tabber by using real music with labelled drums as a training set. The training set and labels would be derived from currently existing, freely available drum tabulatures, aligned to the music properly such that it can assign a tiny slice of that song with a label. After that, a convolutional neural network architecture is used to train a model to predict the drum onset events in a song. Note that the goal of the project is not to produce unique drum rhythms, but only to classify drums in a song. 
