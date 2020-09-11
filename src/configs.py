@@ -52,7 +52,7 @@ DESIRED_ORDER_DICT = {'BD': 1,     # the order desired by the user to display th
 # classification options. See clean_labels and collapse_class functions for full functionality
 CLEAN_DATA         = True
 KEEP_DYNAMICS      = False
-KEEP_BELLS         = False
+KEEP_BELLS         = False    # If False, gets rid of bell hits by setting to blank char. If True, splits bell hits into its own class 'be'
 KEEP_TOMS_SEPARATE = False    # If False, collapses all toms into a single class 'at' for 'all toms'
 HIHAT_CLASSES      = 1        # 1 is only closed HH ('x'), others moved to crash cymbal. 2 is closed ('x') and a combined open and washy into one ('X'). 3 is keep all closed ('x'), washy ('X'), and opened ('o')
 CYMBAL_CLASSES     = 1        # 1 is all cymbals, including ride, to one class 'ac'. 2 is all crash cymbals to one class 'mc', and ride gets split out. -1 is no cymbals get affected, for debugging
