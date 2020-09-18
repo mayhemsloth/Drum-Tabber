@@ -14,7 +14,7 @@ from src.configs import *
 
 
 '''
-TAKEN FROM CODE OF RICHARD VOGL from "TOWARDS MULTI-INSTRuMENT DRUM TRANSCRIPTION" paper
+TAKEN FROM CODE OF RICHARD VOGL from "TOWARDS MULTI-INSTRuMENT DRUM TRANSCRIPTION" 2018 paper
 Used to see an implementation of the peak picking code referenced in the paper
 '''
 def peak_picking(activations, threshold, smooth=None, pre_avg=0, post_avg=0,
