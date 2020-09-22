@@ -25,7 +25,7 @@ CYMBAL_CLASSES     = 1        # 1 is all cymbals, including ride, to one class '
 
 
 # train options
-SONGS_PATH = "Songs"    # the relative filepath to the folder containing all the songs data
+SONGS_PATH = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs"    # the relative filepath to the folder containing all the songs data
 INCLUDE_LR_CHANNELS = True              # if true, uses the Left and Right channels as their own mono channel to include in the data set (whitchever data set that is)
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True   # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation checkpoints in the training process
