@@ -14,6 +14,7 @@ import pandas as pd
 from pydub import AudioSegment   # main class from pydub package used to upload mp3 into Python and then get a NumPy array
 import IPython.display as ipd    # ability to play audio in Jupyter Notebooks if needed
 import librosa as lb             # loads the librosa package
+
 from src.configs import *
 
 
@@ -33,6 +34,11 @@ class MusicAlignedTab(object):
         self.mf_tab = self.hf_to_mf(self.hf_tab)
         self.MAT = self.align_tab_with_music(self.mf_tab, self.json_dict['alignment_info'])
 
+    def __str__(self):
+        song_file = str(self.json_dict['song'])
+        return 'This MAT is for ' + song_file
+
+    # START OF MAIN HIGH LEVEL FUNCTIONS
     def parse_json_file(self,json_fp):
         """
         Parses the JSON file information in the song folder to be utilized in the MusicAlignedTab
@@ -61,11 +67,12 @@ class MusicAlignedTab(object):
         """
 
         # create tab label conversion dictionary here
-        tab_char_labels = self.json_dict   # getting the tab_char_labels dictionary for the object's json_dict
+        master_format_dict = MASTER_FORMAT_DICT
+        tab_char_labels = self.json_dict['tab_char_labels']   # getting the tab_char_labels dictionary for the object's json_dict
         tab_conversion_dict = {}      # dictionary whose keys are the CURRENT TAB's char labels and whose values are the MASTER FORMAT's char labels
         for key in tab_char_labels:
-            if key in MASTER_FORMAT_DICT:   # ensures the keys are in both sets, which they should be
-                tab_conversion_dict[tab_char_labels[key]] = MASTER_FORMAT_DICT[key]
+            if key in master_format_dict:   # ensures the keys are in both sets, which they should be
+                tab_conversion_dict[tab_char_labels[key]] = master_format_dict[key]
 
         # read in the tab .txt file
         with open(self.filepaths['tab'], 'r') as tab_file:
@@ -74,11 +81,11 @@ class MusicAlignedTab(object):
         # build this array tab up and return it
         tab = []
         for line in tab_to_convert:                 # loop over each element in tab (code line in tab)
+            temp = line                             # store current line in temporary
             for key in tab_conversion_dict:          # At each line, loop over each key in the tab_conversion_dict
                 if line.startswith(key):             # If a line starts with the key, reassign it to be the new label from dict...
-                    tab.append(tab_conversion_dict[key] + line[len(key):])   # ...and concatenate with the rest of that line
-                else:
-                    tab.append(line)
+                    temp = tab_conversion_dict[key] + line[len(key):]   # ...and concatenate with the rest of that line, assigning it to temp
+            tab.append(temp)                         # temp is either the same as line, or it got changed because it startswith(key). Either way it needs to be appended to tab
         return tab
 
     def hf_to_mf(self, tab):
@@ -122,7 +129,6 @@ class MusicAlignedTab(object):
             Dataframe: a music-aligned tab inside a pandas dataframe that contains the input data from a song sliced into the 16th note grid in one column,
                       and then all the other columns that represent the classification of the onsets of the drum pieces for that input data row
         """
-
         # Use the machine-friendly text output to get the array of strings into a dataframe, naming the table columns with the key or values of master format dict
         tab_df = self.tab_to_dataframe(mf_output)
 
@@ -134,6 +140,59 @@ class MusicAlignedTab(object):
         df_MAT = self.combine_tab_and_song(tab_df, song, song_info, alignment_info)     # df_MAT = dataframe object of the Music Aligned Tab (with the music attached as well)
 
         return df_MAT
+    # END OF MAIN HIGH LEVEL FUNCTIONS
+
+    # HUMAN-FACING CLASS UTILITY FUNCTIONS
+    def random_alignment_checker(self, drums_to_be_checked, num_buffer_slices):
+        """
+        Outputs a user-friendly way to check a random section of a song, to ensure that a music aligned tab is properly aligned
+
+        Args:
+            drums_to_be_checked [list]: a list of strings that correspond to the master format chars that are being requested to be checked. One random, non-blank result will be checked
+            num_buffer_slices [int]: number of slices that is shown *after* the one that is randomly chosen for inspection
+
+        Returns:
+            None (outputs to display)
+        """
+        tk_label, measure_char, blank_char = TK_LABEL, MEASURE_CHAR, BLANK_CHAR # getter function
+        MAT_df = self.MAT     # transferring the MAT_df info to MAT_df variable name so I don't have to change the function entirely
+
+        drums_possible = list(set(drums_to_be_checked) & set(MAT_df.columns))  # getting the intersection so that no errors are thrown later
+
+        for drum in drums_possible:
+            print("Sampling a " + str(drum) + " event for alignment check... Loading tab and audio slice")
+
+            if (len(MAT_df[MAT_df[drum] != blank_char]) != 0):       # ensures there is a non-blank char in an existing column in the dataframe
+                selection = MAT_df[MAT_df[drum] != blank_char].sample()   # first we create a mask to filter only for a drum event, then sample
+                sel_index = selection.index[0]                            # grab index, which refers to the MAT_df index
+                slices = []                                               # build up this array
+                for idx in range(num_buffer_slices):                      # append the buffer slices after
+                    if (sel_index + idx) < len(MAT_df.index):               # checks to make sure there are slices after
+                        slices.append(list(MAT_df.at[sel_index+idx, 'song slice']))  # appends the next slices of the audio after the random selection
+
+                # displaying of tab
+                drop_MAT = MAT_df.drop(columns = ['song slice'])          # drop the slices column so we are left with only tab
+                print(drop_MAT.iloc[int(sel_index):int(sel_index+num_buffer_slices), :].transpose()[::-1])  # print the tab corresponding to the audio in the correct orientation that we are used to seeing
+
+                # builder and displaying of audio
+                audio = []
+                for item in slices:
+                    for item2 in item:
+                        audio.append(item2)
+                audio_np = np.array(audio)
+                ipd.display(ipd.Audio(audio_np.T, rate = 44100))
+            else:
+                print("No valid samples in " + str(drum) + " of that dataframe")
+
+
+
+        return None
+
+    def labels(self):
+        '''
+
+        '''
+        return None
 
     # START OF DATAFRAME PROCESSING FUNCTIONS
     def tab_to_dataframe(self, mf_output):
@@ -291,7 +350,7 @@ class MusicAlignedTab(object):
 
         # find df_index of row with first drum note
         fdn_row_index = tab_df[tab_df.drop(['tk'], axis=1) != blank_char].first_valid_index()  # creates a mask that changes all the blank_char entries to NaN, then grabs the first row which has a non NaN value (after temporarily dropping the tk line, which could affect this mask)
-        print("All the following prints are from combine_tab_and_song function")
+        print("All the following prints are from combine_tab_and_song function:")
         print("first drum note row = " + str(fdn_row_index))
         tab_len = len(tab_df.index)     # total length of the drum tab dataframe
 
@@ -681,3 +740,50 @@ class MusicAlignedTab(object):
 
         return mf_tab_final
     # END OF TAB STRING PROCESSING FUNCTIONS
+
+def create_FullSetMAT(songs_file_path):
+    '''
+    Function used to create a FullSetMAT to inspect summary statistics on an entire initial dataset of MATs, or to randomly look at different
+
+    Args:
+        songs_file_path [str]: Filepath to the songs folder
+
+    Returns:
+        Dataframe: the FullSet dataframe of all songs' dataframes stacked on top of each other (and outputs information to the user display)
+    '''
+
+    # need to create a MusicAlignedTab object on every song in the song_folder_path given to us, then extract Dataframe, then concatenate
+    MATDF_dict = {}  # dictionary where the keys are the string of the name of the song, and the values are the MAT class object
+
+    subdirs = [os.path.join(songs_file_path, o) for o in os.listdir(songs_file_path) if os.path.isdir(os.path.join(songs_file_path,o))] # grab all the subdirectories in the song_folder_path
+    list_of_songs = [os.path.basename(os.path.normpath(x)) for x in subdirs]  # grabbing only the end of the song folders (that is, the song title)
+    print(f'subdirs = {subdirs}')
+    print(f'list_of_songs = {list_of_songs}')
+
+    for song in list_of_songs:                # go through all the songs folders
+        MAT_class = MusicAlignedTab(song)     # create the MAT class object
+        MATDF_dict[song] = MAT_class.MAT      # extract and keep only the dataframe of the class object
+
+    # get blank char to use in this function
+    blank_char = BLANK_CHAR
+
+    # stacks all the dataframes one on top of another in the rows, ignoring indices of each dataframe, and giving each frame an extra "key" layer
+    print("...Concatenating all music-aligned dataframes")
+    output_df = pd.concat(MATDF_dict, axis=0, ignore_index = False, join = 'outer', sort = False)
+
+    print("...Replacing NaNs with " + blank_char + " for output")
+    output_df = output_df.fillna(blank_char)               # replace NaN with the blank_char
+
+    print("...Dropping the song slices for ease of display \n")
+    full_df = output_df.drop(columns = ['song slice'])    # drop the song slice info because we don't care about them right now
+
+    print("---fullset.describe() without blank_chars---")
+    print(full_df[full_df != blank_char].describe(), '\n')
+
+    print("Unique values and frequencies in column __:")
+    for col in full_df:
+        naf_series = full_df[col].value_counts()
+        print(str(naf_series.to_frame().T))
+        print()
+
+    return output_df
