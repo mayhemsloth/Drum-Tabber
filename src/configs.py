@@ -27,10 +27,13 @@ SONGS_PATH = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs"   
 INCLUDE_LR_CHANNELS = True              # if true, uses the Left and Right channels as their own mono channel to include in the data set (whitchever data set that is)
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True   # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation checkpoints in the training process
-
+TRAIN_LR_INIT       = 1e-4
+TRAIN_LR_END        = 1e-6
+TRAIN_WARMUP_EPOCHS = 2
+TRAIN_EPOCHS        = 100
 
 # augmentation options
-TRAIN_DATA_AUG = True
+TRAIN_DATA_AUG      = True
 
 
 
@@ -73,6 +76,6 @@ DESIRED_ORDER_DICT = {'BD': 1,     # the order desired by the user to display th
                       'C2': 6,     # extra cymbals if needed, classification will ultimately collapse later
                       'C3': 12,     # extra cymbals if needed, classification will ultimately collapse later
                       'C4': 13,     # extra cymbals if needed, classification will ultimately collapse later
-                      'SC':11,
-                      'CH':10
+                      'SC': 11,
+                      'CH': 10
                       }

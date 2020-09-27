@@ -12,6 +12,10 @@
 from src.configs import *
 
 
+'''
+: need a compute_loss function
+'''
+
 
 '''
 TAKEN FROM CODE OF RICHARD VOGL from "TOWARDS MULTI-INSTRuMENT DRUM TRANSCRIPTION" 2018 paper

@@ -19,10 +19,25 @@ class Dataset(object):
         self.data_aug = TRAIN_DATA_AUG if dataset_type == 'train' else VAL_DATA_AUG   # boolean from configs
 
 
+        # THESE ARE IN THE OTHER DATASET CLASS
+        self.input_size = None
+        self.classes = None
+        self.num_classes = None
+
+        # self.annotations = self.load_annotations(dataset_type)
+
 
         self.songs= self.load_songs(dataset_type)
+
+    def __iter__(self):
+        return self
 
     # loads the raw song data
     def load_songs(self, dataset_type):
 
-        return asdf
+        return None
+
+
+    @staticmethod
+    def somefunction():
+        return None
