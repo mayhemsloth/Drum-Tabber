@@ -215,6 +215,7 @@ class MusicAlignedTab(object):
             print()
 
         return None
+    # END OF HUMAN-FACING CLASS UTILITY FUNCTIONS
 
     # START OF DATAFRAME PROCESSING FUNCTIONS
     def tab_to_dataframe(self, mf_output):
@@ -339,14 +340,14 @@ class MusicAlignedTab(object):
                                           }
 
         Returns:
-            Dataframe: contains 'song slice', 'tk' and drum piece label columns, aligned properly. Basically the sum of 'song slice' should be most of the song if converted back to audio and played
+            Dataframe: contains 'song slice', 'tk', 'sample start' and drum piece label columns, aligned properly. Basically the sum of 'song slice' should be most of the song if converted back to audio and played
         """
         tk_label, measure_char, blank_char = TK_LABEL, MEASURE_CHAR, BLANK_CHAR # grab the special chars, we'll need the blank_char and measure_char
 
         # TODO: Allow Tempo Changes into the set of tabs/music that can be processed
         if alignment_info['tempo change'] == True: # checks if the tab has an tempo changes
             print("This song has a tempo change, rejecting the tab for now.")
-            # return tab_df    # If so, return the tab dataframe unchanged because we don't want to deal with that right now
+            return tab_df    # If so, return the tab dataframe unchanged because we don't want to deal with that right now
 
         triplets_bool = alignment_info['triplets']  # grabs the boolean of if this tab has ANY triplets in it
 
@@ -373,7 +374,7 @@ class MusicAlignedTab(object):
         # find df_index of row with first drum note
         fdn_row_index = tab_df[tab_df.drop(['tk'], axis=1) != blank_char].first_valid_index()  # creates a mask that changes all the blank_char entries to NaN, then grabs the first row which has a non NaN value (after temporarily dropping the tk line, which could affect this mask)
         print("All the following prints are from combine_tab_and_song function:")
-        print("first drum note row = " + str(fdn_row_index))
+        print(f'first drum note row = {fdn_row_index}')
         tab_len = len(tab_df.index)     # total length of the drum tab dataframe
 
         # slice up raw audio AFTER the first drum note, correcting for potential misalignment due to lopping off remainder of sample delta, and handling the triplet case
@@ -509,7 +510,7 @@ class MusicAlignedTab(object):
             slices_post_fdn [list]: list of np.arrays that are the raw audio of the song slices post first drum note
             fdn_row_index [int]: index of the row of the first drum note in the tab dataframe
             tab_len [int]: length of the tab dataframe
-            fdn_sample_loc:
+            fdn_sample_loc [int]:
 
         Returns:
             Dataframe: dataframe of two columns: one named 'song slice' that contains all the rows of the song slices, in the correct index position, to afterwards be immediately adjoined with the tab

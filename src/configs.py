@@ -10,9 +10,11 @@
 
 # model options
 N_MELS      = 150        # number of mel bins to be created in the spectrograms
-WINDOW_SIZE = 2048  # number of samples large that each spectro slice is. At 2048 and 44100 Hz sample rate, each window is 46 ms
-HOP_SIZE    = 441      # number of samples to hop each time when creating the spectrogram. 441 gives a 10ms hop size. That is, you produce a window every 10 ms
+WINDOW_SIZE = 2048       # number of samples large that each spectro slice is. At 2048 and 44100 Hz sample rate, each window is 46 ms
+HOP_SIZE    = 441        # number of samples to hop each time when creating the spectrogram. 441 gives a 10ms hop size. That is, you produce a window every 10 ms
+SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatever it is in when you get the output from lb.melspectrogram
 INCLUDE_FO_DIFFERENTIAL = True  # keeps the first order differential over time of the spectrograms
+
 
 # classification options. See clean_labels and collapse_class functions for full functionality
 CLEAN_DATA         = True
@@ -24,7 +26,7 @@ CYMBAL_CLASSES     = 1        # 1 is all cymbals, including ride, to one class '
 
 # train options
 SONGS_PATH = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs"    # the relative filepath to the folder containing all the songs data
-INCLUDE_LR_CHANNELS = True              # if true, uses the Left and Right channels as their own mono channel to include in the data set (whitchever data set that is)
+INCLUDE_LR_CHANNELS = True              # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True   # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation checkpoints in the training process
 TRAIN_LR_INIT       = 1e-4
