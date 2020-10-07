@@ -13,8 +13,9 @@ N_MELS      = 150        # number of mel bins to be created in the spectrograms
 WINDOW_SIZE = 2048       # number of samples large that each spectro slice is. At 2048 and 44100 Hz sample rate, each window is 46 ms
 HOP_SIZE    = 441        # number of samples to hop each time when creating the spectrogram. 441 gives a 10ms hop size. That is, you produce a window every 10 ms
 SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatever it is in when you get the output from lb.melspectrogram
-INCLUDE_FO_DIFFERENTIAL = True  # keeps the first order differential over time of the spectrograms
-
+INCLUDE_FO_DIFFERENTIAL = False  # keeps the first order differential over time of the spectrograms
+POSITIVE_WINDOW_FRACTION = 0.2 # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
+NEGATIVE_WINDOW_FRACTION = 0.1 # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
 
 # classification options. See clean_labels and collapse_class functions for full functionality
 CLEAN_DATA         = True
@@ -66,6 +67,8 @@ BLANK_CHAR        = '-'     # the character used to denote a blank in a drum lin
 QUARTER_TRIPLET   = 'tq'    # 2-char string that denotes when quarter note triplet occurs in the tk line
 EIGHTH_TRIPLET    = 'te'    # 2-char string that denotes when eighth note triplet occurs in the tk line
 SIXTEENTH_TRIPLET = 'ts'    # 2-char string that denotes when sixteenth note triplet occurs in the tk line
+BEAT_CHAR         = 'c'     # the character used to denote a beat in the 'tk' line when cleaning labels
+DOWNBEAT_CHAR     = 'C'     # the character used to denote a downbeat in the 'tk' line when cleaning labels
 
 DESIRED_ORDER_DICT = {'BD': 1,     # the order desired by the user to display the drum piece lines in, from bottom to top
                       'SD': 2,
