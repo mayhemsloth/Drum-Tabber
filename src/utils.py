@@ -202,17 +202,17 @@ class MusicAlignedTab(object):
 
         # drop all columns whose column names if the column name contains a space
         to_drop = [col for col in list(df.columns) if ' ' in col]
-        df = df.drop(columns = to_drop)
+        df_ = df.drop(columns = to_drop)
 
         # print statistics for each drum line
-        print("---dataframe.describe() without blank_chars---")
-        # print(df[df != blank_char].describe())
-        print(df[df.apply(lambda x: x.astype(str).str.contains(blank_char).any(), axis=1)].describe())
-        print()
+        if 'int64' not in list(df_.dtypes):
+            print("---dataframe.describe() without blank_chars---")
+            print(df_[df_ != blank_char].describe())
+            print()
 
         print("---Unique values and frequencies by column name---")
-        for col in df:
-            naf_series = df[col].value_counts()
+        for col in df_:
+            naf_series = df_[col].value_counts()
             print(str(naf_series.to_frame().T))
             print()
 
@@ -801,7 +801,7 @@ def create_FullSetMAT(songs_file_path):
     '''
 
     # need to create a MusicAlignedTab object on every song in the song_folder_path given to us, then extract Dataframe, then concatenate
-    MATDF_dict = {}  # dictionary where the keys are the string of the name of the song, and the values are the MAT class object
+    MATDF_dict = {}  # dictionary where the keys are the string of the name of the song, and the values are the dataframe from the MAT class object
 
     subdirs = [os.path.join(songs_file_path, o) for o in os.listdir(songs_file_path) if os.path.isdir(os.path.join(songs_file_path,o))] # grab all the subdirectories in the song_folder_path
     list_of_songs = [os.path.basename(os.path.normpath(x)) for x in subdirs]  # grabbing only the end of the song folders (that is, the song title)

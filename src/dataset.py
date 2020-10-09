@@ -41,7 +41,6 @@ class Dataset(object):
 
         return None
 
-
     @staticmethod
     def somefunction():
         return None
@@ -58,11 +57,14 @@ def create_spectrogram(song_fp):
     '''
 
     lb_song, sr = lb.core.load(song_fp, sr=None, mono=False)    # returns numpy array of shape (2,n) for stereo
-    lb_mono = lb.core.to_mono(lb_song)          # returns a numpy array of shape (n,) that is the mono of the loaded song
     print(f'create_spectrogram: lb_song.shape = {lb_song.shape}')
     print(f'create_spectrogram: sr = {sr}')
 
+    # DATA AUGMENTATIONS APPLIED HERE
+    # lb_song = apply_augmentations(lb_song)
+
     # create mono spectro
+    lb_mono = lb.core.to_mono(lb_song)          # returns a numpy array of shape (n,) that is the mono of the loaded song
     print(f'create_spectrogram: lb_mono.shape = {lb_mono.shape}')
     mono_S = lb.feature.melspectrogram(lb_mono, sr=sr, n_fft = WINDOW_SIZE, hop_length = HOP_SIZE, center = False, n_mels = N_MELS) # numpy array of shape (n_mels, t)
     print(f'create_spectrogram: mono_S.shape = {mono_S.shape}')
@@ -114,28 +116,32 @@ def create_targets(spectrogram, df):
     '''
 
     _, n_windows, n_channels = spectrogram.shape   # S.shape is (n_mels, t, n_channels), where t = number of frames/windows
-    class_labels = df.drop(columns = ['sample start']).columns
-    n_classes = len(class_labels)
+    df_labels = df.drop(columns = ['sample start', 'song slice'], errors = 'ignore')   # get a dataframe that only has the labels
+    class_names = df_labels.columns
+    n_classes = len(class_names)
     targets = np.zeros((n_classes, n_windows, n_channels), dtype=int)  # initializes as all zeros in shape of (n_classes number of rows, n_frames number of columns)
     sample_starts = list(df['sample start'])
-    df_labels = df.drop(columns = ['sample start'])   # get a dataframe that only has the labels
+
 
     # the spectrogram represents the entire "song" or clip, and thus we assume it starts at sample 0 w.r.t. the song's samples
     # each window is WINDOW_SIZE long, and each window starts at sample idx_frame_in_list * HOP_SIZE
 
     # loop through each window, and check if that window is in "range" to be labeled
+    tab_slice_idx = 0
     for idx in range(n_windows):
         window_start = idx * HOP_SIZE     # the sample number of the window's beginning
         positive_window = int(window_start + POSITIVE_WINDOW_FRACTION*WINDOW_SIZE)
         negative_window = int(window_start - NEGATIVE_WINDOW_FRACTION*WINDOW_SIZE)
-        if negative_window < 0:
-            negative_window = 0    # ensuring negative_window sample location is at least 0
-        for tab_slice_num, sample_start in enumerate(sample_starts):  # naive approach, looping through entire sample_start for every frame
-            if sample_start > negative_window and sample_start <= positive_window: # the drum event's sample_start falls within the acceptable range
-                targets[:, idx, :] = np.repeat(df_labels.loc[tab_slice_num].to_numpy(), n_channels, axis=1)
+        # TODO: fix this algorithmic approach so that it is more compatible with a larger WINDOW_SIZE while also being speedy
+        if negative_window < sample_starts[tab_slice_idx] <= positive_window: # the drum event's sample_start falls within the acceptable range
+            targets[:, idx, :] = np.stack([df_labels.loc[tab_slice_idx].to_numpy() for _ in range(n_channels)], axis=-1)
+        if sample_starts[tab_slice_idx] < negative_window:   # if the sliding windows have passed the current tab slice
+            tab_slice_idx +=1
+        if tab_slice_idx >= len(sample_starts):
+            break
 
     # create target_dictionary that maps the indices to the column name
-    target_dictionary = {idx : val for idx, val in enumerate(class_labels)}
+    target_dictionary = {idx : val for idx, val in enumerate(class_names)}
 
     return targets, target_dictionary
 
@@ -154,6 +160,7 @@ def one_hot_encode(df):
     tk_label, measure_char, blank_char = TK_LABEL, MEASURE_CHAR, BLANK_CHAR # get blank_char mainly
 
     col_list = list(df.drop(columns = ['song slice', 'sample start'], errors = 'ignore').columns) # if 'ignore', suppress error and only existing labels are dropped
+    print(f'one_hot_encode: col_list = {col_list}')
     for col in col_list:                     # goes through all the column names except 'song slice' and 'sample start'
         uniques = [uniq for uniq in df[col].unique() if uniq is not blank_char] # list of unique values found in current column
         if col == 'tk':                   # we are in the time-keeping column case, so we'll hard code handle this
@@ -162,9 +169,9 @@ def one_hot_encode(df):
         else:     # we are in all the other column cases, so we have to generically code this
             for label in uniques:   # we treat all the different labels as separate, regardless of how many we have on each line
                 df[col + '_' + label] = df[col].apply(lambda row3: 1 if row3 == label else 0)  # create a column named like "BD_o" where it is 1 any time you have that label and 0 elsewhere
-        df = df.drop(columns = [col])    # drop the column because we no longer need it as it has been encoded properly
+    df_encoded = df.drop(columns = col_list)    # drop the columns because we no longer need it as it has been encoded properly
 
-    return df
+    return df_encoded
 
 def clean_labels(df):
     '''

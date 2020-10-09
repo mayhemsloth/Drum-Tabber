@@ -9,23 +9,47 @@
 #================================================================
 '''
 : import all the dependency functions and modules here.
-: If you import the configs file you get access to all the variables in there and the function can use it
+: If you import the configs file you get access to all the variables in there and the functions can use it
 '''
 
 from src.configs import *
 
 
-'''
-# start the main function definition
-    def main():
 
-# sets the gpus usage with the following code
+def main():
+    '''
+    Main training function used to initiate training of the Drum-Tabber model
+    '''
+
+    # set GPU usage
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if len(gpus) > 0:
         try: tf.config.experimental.set_memory_growth(gpus[0], True)
         except RuntimeError: pass
 
-# Does some type of checking of the trian log directory with
+    if os.path.exists(TRAIN_LOGDIR):
+        shutil.rmtree(TRAIN_LOGDIR)
+    writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
+
+
+    return None
+
+
+if __name__ == '__main__':
+    main()
+
+'''
+    # start the main function definition
+    def main():
+
+
+    # sets the gpus usage with the following code
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if len(gpus) > 0:
+        try: tf.config.experimental.set_memory_growth(gpus[0], True)
+        except RuntimeError: pass
+
+   # Does some type of checking of the trian log directory with
     if os.path.exists(TRAIN_LOGDIR): shutil.rmtree(TRAIN_LOGDIR)
     writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
 
