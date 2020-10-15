@@ -19,7 +19,7 @@ from src.configs import *
 # defining the Dataset class
 class Dataset(object):
     def __init__(self, dataset_type):   # dataset_type = 'train' or 'val'
-        self.songs_path = SONGS_PATH    # train and validation subfolders will be contained in this folder file path form configs
+        self.song_list = self.get_song_list(dataset_type)# train and validation subfolders will be contained in this folder file path form configs
         self.data_aug = TRAIN_DATA_AUG if dataset_type == 'train' else VAL_DATA_AUG   # boolean from configs
 
 
@@ -30,11 +30,41 @@ class Dataset(object):
 
         # self.annotations = self.load_annotations(dataset_type)
 
-
-        self.songs= self.load_songs(dataset_type)
-
     def __iter__(self):
         return self
+
+    def __next__(self):
+
+        '''
+        num = 0
+        if self.batch_count < self.num_batches:
+            while num < self.batch_size:
+                # do parsing and preprocessing here
+                num +=1
+
+            self.batch_count +=1
+            return batch_spectrogram, batch_targets
+        else:
+            self.batch_count = 0
+            # np.random.shuffle(self.annotations)
+            raise StopIteration       # stops the iterator from continuing
+        '''
+
+    # Helper Functions
+    def get_song_list(self, dataset_type):
+        '''
+        Helper function to get the song list for the current Dataset type
+
+        Args:
+            dataset_type [str]: either 'train' or 'val'
+
+        Returns:
+            list: a list of strings that are the names of the song subfolders that exist for that dataset type
+        '''
+        if dataset_type == 'train':
+            return [x.name for x in os.scandir(SONGS_PATH) if x.is_dir() and x.name not in VAL_SONG_LIST]
+        if dataset_type == 'val':
+            return [x.name for x in os.scandir(SONGS_PATH) if x.is_dir() and x.name in VAL_SONG_LIST]
 
     # loads the raw song data
     def load_songs(self, dataset_type):

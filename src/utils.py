@@ -159,7 +159,7 @@ class MusicAlignedTab(object):
 
         drums_possible = list(set(drums_to_be_checked) & set(MAT_df.columns))  # getting the intersection so that no errors are thrown later
 
-        drop_MAT = MAT_df.drop(columns = ['song slice', 'sample start'])          # drop the slices column so we are left with only tab
+        drop_MAT = MAT_df.drop(columns = ['song slice', 'sample start'], errors = 'ignore')          # drop the slices column so we are left with only tab
 
         for drum in drums_possible:
             print("Sampling a " + str(drum) + " event for alignment check... Loading tab and audio slice")

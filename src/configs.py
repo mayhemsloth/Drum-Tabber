@@ -18,10 +18,10 @@ POSITIVE_WINDOW_FRACTION = 0.3 # this number denotes the fraction (of the WINDOW
 NEGATIVE_WINDOW_FRACTION = 0.1 # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
 
 # classification options. See clean_labels and collapse_class functions for full functionality
-CLEAN_DATA         = True
-KEEP_DYNAMICS      = False
+CLEAN_DATA         = True     # This should always be true, there's really no reason to not clean the labels
+KEEP_DYNAMICS      = False    # If False, gets rid of dynamics of certain drum tab notation ('O' goes to 'o', 'X' goes to 'x', etc.). If True, keeps all dynamics
 KEEP_BELLS         = False    # If False, gets rid of bell hits by setting to blank char. If True, splits bell hits into its own class 'be'
-KEEP_TOMS_SEPARATE = False    # If False, collapses all toms into a single class 'at' for 'all toms'
+KEEP_TOMS_SEPARATE = False    # If False, collapses all toms into a single class 'at' for 'all toms'. If True, keeps toms the same way and in separate classes
 HIHAT_CLASSES      = 1        # 1 is only closed HH ('x'), others moved to crash cymbal. 2 is closed ('x') and a combined open and washy into one ('X'). 3 is keep all closed ('x'), washy ('X'), and opened ('o')
 CYMBAL_CLASSES     = 1        # 1 is all cymbals, including ride, to one class 'ac'. 2 is all crash cymbals to one class 'mc', and ride gets split out. -1 is no cymbals get affected, for debugging
 
@@ -30,7 +30,7 @@ SONGS_PATH = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs"   
 INCLUDE_LR_CHANNELS = True              # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True   # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation checkpoints in the training process
-TRAIN_LOGDIR = 'logs'
+TRAIN_LOGDIR        = 'logs'
 TRAIN_LR_INIT       = 1e-4
 TRAIN_LR_END        = 1e-6
 TRAIN_WARMUP_EPOCHS = 2
@@ -42,7 +42,8 @@ TRAIN_DATA_AUG      = True
 
 
 # validation options
-VAL_DATA_AUG = False
+VAL_DATA_AUG         = False
+VAL_SONG_LIST        = ['misery_business', 'four_years']     # the songs that will be not used in the training set but instead in the validation set
 
 
 
