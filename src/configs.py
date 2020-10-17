@@ -26,7 +26,7 @@ HIHAT_CLASSES      = 1        # 1 is only closed HH ('x'), others moved to crash
 CYMBAL_CLASSES     = 1        # 1 is all cymbals, including ride, to one class 'ac'. 2 is all crash cymbals to one class 'mc', and ride gets split out. -1 is no cymbals get affected, for debugging
 
 # train options
-SONGS_PATH = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs"    # the relative filepath to the folder containing all the songs data
+SONGS_PATH = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs"    # the absolute filepath to the folder containing all the songs data
 INCLUDE_LR_CHANNELS = True              # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True   # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation checkpoints in the training process
@@ -37,8 +37,21 @@ TRAIN_WARMUP_EPOCHS = 2
 TRAIN_EPOCHS        = 100
 
 # augmentation options
-TRAIN_DATA_AUG      = True
-
+TRAIN_DATA_AUG             = True
+BACKGROUNDNOISES_PATH      = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/BackgroundNoises/normalized"    # the absolute filepath to the folder containing the BackgroundNoises used to add noises
+FREQUENCY_MASK_CHANCE      = 0.2
+GAUSSIAN_SNR_CHANCE        = 0.2
+GAUSSIAN_NOISE_CHANCE      = 0.2
+PITCH_SHIFT_CHANCE         = 0.2
+SHIFT_CHANCE               = 0.5   # half of songs will start at a random point instead of the beginning
+NORMALIZE_CHANCE           = 0.2
+CLIPPING_DISTORTION_CHANCE = 0.2
+BACKGROUND_NOISE_CHANCE    = 0.2
+POLARITY_CHANCE            = 0.5   # half of the songs will be flipped upside. Should produce more varied samples when adding things
+GAIN_CHANCE                = 0.2
+MP3_COMPRESSION_CHANCE     = 0.2
+BIN_DROPOUT_CHANCE         = 0.1
+S_NOISE_CHANCE             = 0.1
 
 
 # validation options

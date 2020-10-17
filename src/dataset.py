@@ -12,6 +12,7 @@ import os
 import librosa as lb          # loads the librosa package
 import librosa.display
 import numpy as np
+import audiomentations as adm
 
 from src.configs import *
 
