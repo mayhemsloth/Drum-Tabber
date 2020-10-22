@@ -11,10 +11,17 @@
 : import all the dependency functions and modules here.
 : If you import the configs file you get access to all the variables in there and the functions can use it
 '''
+import os
+import shutil
+import random
+import numpy as np
+import pandas as pd
+import librosa as lb
+import tensorflow as tf
 
 from src.configs import *
-
-
+from src.dataset import Dataset, clean_labels, collapse_class, one_hot_encode
+from src.utils import MusicAlignedTab, create_FullSetMAT
 
 def main():
     '''
@@ -27,9 +34,32 @@ def main():
         try: tf.config.experimental.set_memory_growth(gpus[0], True)
         except RuntimeError: pass
 
+    # create logs directory and the
     if os.path.exists(TRAIN_LOGDIR):
         shutil.rmtree(TRAIN_LOGDIR)
     writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
+
+    if TRAIN_FULLSET_MEMORY:       # we can create and load the entire FullSet into memory
+        FullSet = create_FullSetMAT(SONGS_PATH)
+        if CLEAN_DATA:
+            FullSet = clean_labels(FullSet)
+            MusicAlignedTab.labels_summary(FullSet)
+        FullSet = collapse_class(FullSet_df = FullSet,
+                                    keep_dynamics = KEEP_DYNAMICS,
+                                    keep_bells = KEEP_BELLS,
+                                    keep_toms_separate = KEEP_TOMS_SEPARATE,
+                                    hihat_classes = HIHAT_CLASSES,
+                                    cymbal_classes = CYMBAL_CLASSES)
+        MusicAlignedTab.labels_summary(FullSet)   # prints a labels summary out to screen
+        FullSet_encoded = one_hot_encode(FullSet)
+    else:
+        FullSet_encoded = None
+
+    train_set = Dataset('train', FullSet_encoded)
+    val_set = Dataset('val', FullSet_encoded)
+
+
+
 
 
     return None
@@ -53,9 +83,9 @@ if __name__ == '__main__':
     if os.path.exists(TRAIN_LOGDIR): shutil.rmtree(TRAIN_LOGDIR)
     writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
 
-# Creates the two Dataset objects with
-    trainset = Dataset('train')
-    testset = Dataset('test')
+    # Creates the two Dataset objects with
+        trainset = Dataset('train')
+        testset = Dataset('test')
 
 # calculates a bunch of useful vars
     steps_per_epoch = len(trainset)    # note that Dataset object is structured as a iterable whose length is equal to the num_batches

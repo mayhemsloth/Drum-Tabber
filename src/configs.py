@@ -14,8 +14,10 @@ WINDOW_SIZE = 2048       # number of samples large that each spectro slice is. A
 HOP_SIZE    = 441        # number of samples to hop each time when creating the spectrogram. 441 gives a 10ms hop size. That is, you produce a window every 10 ms
 SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatever it is in when you get the output from lb.melspectrogram
 INCLUDE_FO_DIFFERENTIAL = False  # keeps the first order differential over time of the spectrograms
-POSITIVE_WINDOW_FRACTION = 0.3 # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
-NEGATIVE_WINDOW_FRACTION = 0.1 # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
+POSITIVE_WINDOW_FRACTION = 0.3   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
+NEGATIVE_WINDOW_FRACTION = 0.1   # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
+
+SAMPLE_RATE = 44100  # need to delete this whenever I
 
 # classification options. See clean_labels and collapse_class functions for full functionality
 CLEAN_DATA         = True     # This should always be true, there's really no reason to not clean the labels
@@ -30,6 +32,7 @@ SONGS_PATH = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs"   
 INCLUDE_LR_CHANNELS = True              # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True   # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation checkpoints in the training process
+TRAIN_FULLSET_MEMORY = True             # if true, utilizes the FullSet dataframe in memory to continuously pull from during training/val. ASSUMES FullSet (all songs) can be held in memory
 TRAIN_LOGDIR        = 'logs'
 TRAIN_LR_INIT       = 1e-4
 TRAIN_LR_END        = 1e-6
@@ -39,17 +42,17 @@ TRAIN_EPOCHS        = 100
 # augmentation options
 TRAIN_DATA_AUG             = True
 BACKGROUNDNOISES_PATH      = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/BackgroundNoises/normalized"    # the absolute filepath to the folder containing the BackgroundNoises used to add noises
-FREQUENCY_MASK_CHANCE      = 0.2
-GAUSSIAN_SNR_CHANCE        = 0.2
-GAUSSIAN_NOISE_CHANCE      = 0.2
-PITCH_SHIFT_CHANCE         = 0.2
 SHIFT_CHANCE               = 0.5   # half of songs will start at a random point instead of the beginning
-NORMALIZE_CHANCE           = 0.2
-CLIPPING_DISTORTION_CHANCE = 0.2
-BACKGROUND_NOISE_CHANCE    = 0.2
 POLARITY_CHANCE            = 0.5   # half of the songs will be flipped upside. Should produce more varied samples when adding things
-GAIN_CHANCE                = 0.2
-MP3_COMPRESSION_CHANCE     = 0.2
+FREQUENCY_MASK_CHANCE      = 0.25
+GAUSSIAN_SNR_CHANCE        = 0.25
+GAUSSIAN_NOISE_CHANCE      = 0.25
+PITCH_SHIFT_CHANCE         = 0.25
+NORMALIZE_CHANCE           = 0.25
+CLIPPING_DISTORTION_CHANCE = 0.25
+BACKGROUND_NOISE_CHANCE    = 0.25
+GAIN_CHANCE                = 0.25
+MP3_COMPRESSION_CHANCE     = 0.25
 BIN_DROPOUT_CHANCE         = 0.1
 S_NOISE_CHANCE             = 0.1
 
