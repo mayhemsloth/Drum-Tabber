@@ -17,7 +17,7 @@ INCLUDE_FO_DIFFERENTIAL = False  # keeps the first order differential over time 
 POSITIVE_WINDOW_FRACTION = 0.3   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
 NEGATIVE_WINDOW_FRACTION = 0.1   # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
 
-SAMPLE_RATE = 44100  # need to delete this whenever I
+SAMPLE_RATE = 44100  # need to delete this whenever I finally implement the sr carryover from the song loading in
 
 # classification options. See clean_labels and collapse_class functions for full functionality
 CLEAN_DATA         = True     # This should always be true, there's really no reason to not clean the labels
@@ -29,20 +29,24 @@ CYMBAL_CLASSES     = 1        # 1 is all cymbals, including ride, to one class '
 
 # train options
 SONGS_PATH = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs"    # the absolute filepath to the folder containing all the songs data
-INCLUDE_LR_CHANNELS = True              # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
+INCLUDE_LR_CHANNELS   = True            # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True   # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation checkpoints in the training process
-TRAIN_FULLSET_MEMORY = True             # if true, utilizes the FullSet dataframe in memory to continuously pull from during training/val. ASSUMES FullSet (all songs) can be held in memory
-TRAIN_LOGDIR        = 'logs'
-TRAIN_LR_INIT       = 1e-4
-TRAIN_LR_END        = 1e-6
-TRAIN_WARMUP_EPOCHS = 2
-TRAIN_EPOCHS        = 100
+TRAIN_FULLSET_MEMORY  = True            # if true, utilizes the FullSet dataframe in memory to continuously pull from during training/val. ASSUMES FullSet (all songs) can be held in memory
+TRAIN_LOGDIR          = 'logs'
+TRAIN_CHECKPOINTS_FOLDER = 'checkpoints'
+TRAIN_FROM_CHECKPOINT = False
+
+TRAIN_LR_INIT         = 1e-4
+TRAIN_LR_END          = 1e-6
+TRAIN_WARMUP_EPOCHS   = 2
+TRAIN_EPOCHS          = 100
+
 
 # augmentation options
 TRAIN_DATA_AUG             = True
 BACKGROUNDNOISES_PATH      = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/BackgroundNoises/normalized"    # the absolute filepath to the folder containing the BackgroundNoises used to add noises
-SHIFT_CHANCE               = 0.5   # half of songs will start at a random point instead of the beginning
+SHIFT_CHANCE               = 0.5   # half of songs will start at a random point instead of the beginning, but still include the full song (wrapped around to end)
 POLARITY_CHANCE            = 0.5   # half of the songs will be flipped upside. Should produce more varied samples when adding things
 FREQUENCY_MASK_CHANCE      = 0.25
 GAUSSIAN_SNR_CHANCE        = 0.25
@@ -54,7 +58,9 @@ BACKGROUND_NOISE_CHANCE    = 0.25
 GAIN_CHANCE                = 0.25
 MP3_COMPRESSION_CHANCE     = 0.25
 BIN_DROPOUT_CHANCE         = 0.1
+BIN_DROPOUT_RATIO          = 0.05  # percentage of bins that will be set to 0 if bin dropout chance is successful
 S_NOISE_CHANCE             = 0.1
+S_NOISE_RANGE_WIDTH        = 0.1   # width of range of numbers around 1 that S_noise will choose from to multiply by to create noise (0.1 ==> pulls from 0.95 to 1.05)
 
 
 # validation options

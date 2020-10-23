@@ -23,6 +23,8 @@ from src.configs import *
 from src.dataset import Dataset, clean_labels, collapse_class, one_hot_encode
 from src.utils import MusicAlignedTab, create_FullSetMAT
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
 def main():
     '''
     Main training function used to initiate training of the Drum-Tabber model
@@ -34,13 +36,13 @@ def main():
         try: tf.config.experimental.set_memory_growth(gpus[0], True)
         except RuntimeError: pass
 
-    # create logs directory and the
+    # create logs directory and the tf.writer log
     if os.path.exists(TRAIN_LOGDIR):
         shutil.rmtree(TRAIN_LOGDIR)
     writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
 
-    if TRAIN_FULLSET_MEMORY:       # we can create and load the entire FullSet into memory
-        FullSet = create_FullSetMAT(SONGS_PATH)
+    if TRAIN_FULLSET_MEMORY:       # able to create and load the entire FullSet into memory
+        FullSet = create_FullSet_df(SONGS_PATH)
         if CLEAN_DATA:
             FullSet = clean_labels(FullSet)
             MusicAlignedTab.labels_summary(FullSet)
@@ -55,12 +57,39 @@ def main():
     else:
         FullSet_encoded = None
 
+    # create the iterable Dataset objects for training
     train_set = Dataset('train', FullSet_encoded)
     val_set = Dataset('val', FullSet_encoded)
 
+    # epochs/steps variables (note that a "step" is currently setup as one song)
+    steps_per_epoch = len(train_set) # how many songs there are in the training set
+    global_steps = tf.Variable(1, trainable=False, dtype=tf.int64)   # specifically used as args for later tf functions
+    warmup_steps = TRAIN_WARMUP_EPOCHS * steps_per_epoch
+    total_steps = TRAIN_EPOCHS * steps_per_epoch
 
+    # load the model to be trained, based on configs.py options
+    # drum_tabber = create_DrumTabber(arg1, arg2, arg3)  # initial randomized weights
+    '''
+    if TRAIN_FROM_CHECKPOINT:
+        try:
+            drum_tabber.load_weights('path_to_training_checkpoints_and_model_name')
+        except ValueError:
+            print("Shapes are incompatible, using default initial randomized weights")
+    '''
 
+    # load the optimizer, using Adam
+    optimizer = tf.keras.optimizers.Adam()
 
+    best_val_loss = 10000
+    for epoch in range(TRAIN_EPOCHS):
+        for spectrogram, target in train_set:
+            # do a train step with the current spectrogram and target
+            # results = train_step(spectrogram, target)
+            pass
+        for spectrogram, target in val_set:
+            # do a validation step with the current spectrogram and target
+            # results = validation_step(spectrogram, target)
+            pass
 
     return None
 
@@ -87,18 +116,14 @@ if __name__ == '__main__':
         trainset = Dataset('train')
         testset = Dataset('test')
 
-# calculates a bunch of useful vars
-    steps_per_epoch = len(trainset)    # note that Dataset object is structured as a iterable whose length is equal to the num_batches
-    global_steps = tf.Variable(1, trainable=False, dtype=tf.int64)
-    warmup_steps = TRAIN_WARMUP_EPOCHS * steps_per_epoch
-    total_steps = TRAIN_EPOCHS * steps_per_epoch
+    # calculates a bunch of useful vars
+        steps_per_epoch = len(trainset)    # note that Dataset object is structured as a iterable whose length is equal to the num_batches
+        global_steps = tf.Variable(1, trainable=False, dtype=tf.int64)
+        warmup_steps = TRAIN_WARMUP_EPOCHS * steps_per_epoch
+        total_steps = TRAIN_EPOCHS * steps_per_epoch
 
 # Loads a model according to the conditionals provided. Uses custom functions to load weights into the different models constructed
-    if TRAIN_TRANSFER:
-        blah blah blah
     if TRAIN_FROM_CHECKPOINT:
-        blah blah blah
-    if TRAIN_TRANSFER and not TRAIN_FROM_CHECKPOINT:
         blah blah blah
     All use yolo = Create_Yolo3(training = True) option to create the model.
     Note that Create_Yolo3 function returns the object from the call of tf.keras.Model(input_layer, output_tensors)
@@ -108,8 +133,8 @@ if __name__ == '__main__':
         # output_tensors is a list of TF layers (either Conv2D, BatchNormalization [A CUSTOM VERSION] or a LeakyReLU)
         # Those layers were built up in different functions that built "blocks". Basically this is the Yolo implementation in TF
 
-# Loads the optimizer
-    optimizer = tf.keras.optimizers.Adam()
+    # Loads the optimizer
+        optimizer = tf.keras.optimizers.Adam()
 
 # defines a function called train_step
     def train_step(image_data, target):

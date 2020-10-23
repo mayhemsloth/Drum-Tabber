@@ -20,6 +20,9 @@ from src.configs import *
 
 # defining the Dataset class
 class Dataset(object):
+    '''
+    Custom Dataset object used to iterate through the training and validation data during model training
+    '''
     def __init__(self, dataset_type, FullSet_df = None):   # dataset_type = 'train' or 'val', FullSet_df = encoded FullSet of songs in memory
         self.song_list = self.get_song_list(dataset_type)# train and validation subfolders will be contained in this folder file path form configs
         self.data_aug = TRAIN_DATA_AUG if dataset_type == 'train' else VAL_DATA_AUG   # boolean from configs
@@ -27,12 +30,12 @@ class Dataset(object):
         self.subset_df = FullSet_df.loc[self.song_list].copy() if self.FullSet_memory else None   # makes a copy of the subset of the FullSet, still with the multi-index labels of the songs
         self.aug_comp = Dataset.create_composition() if self.data_aug else None
 
+        self.classes = [x for x in list(self.subset_df.columns) if '_' in x]  if self.subset_df is not None else None  # assumes that the labels in the df are appropriately named ('_' only being introduced at encoded phase)
+        self.num_classes = len(self.classes)
         self.num_songs = len(self.song_list)
 
-        # THESE ARE IN THE OTHER DATASET CLASS
-        self.input_size = None
-        self.classes = None
-        self.num_classes = None
+        self.song_count = 0  # indexer for iterating
+
 
         # self.annotations = self.load_annotations(dataset_type)
 
@@ -40,21 +43,19 @@ class Dataset(object):
         return self
 
     def __next__(self):
+        with tf.device('/cpu:0'):   # not sure what this does, but it was in the tutorial
 
-        '''
-        num = 0
-        if self.batch_count < self.num_batches:
-            while num < self.batch_size:
-                # do preprocessing here
-                num +=1
+            if self.song_count < self.num_songs:   # if <, then in this iterable call we still have songs remaining in the Dataset
+                # do preprocessing here and return the spectrogram, targets of the song
+                song_title = self.song_list[self.song_count]
+                spectrogram, target = self.preprocess_song(song_title)
+                self.song_count += 1
+                return spectrogram, target
 
-            self.batch_count +=1
-            return batch_spectrogram, batch_targets
-        else:
-            self.batch_count = 0
-            # np.random.shuffle(self.annotations)
-            raise StopIteration       # stops the iterator from continuing
-        '''
+            else:   # we went through all the songs in the Dataset, so let's reset the object to it's default state and randomize
+                self.song_count = 0
+                random.shuffle(self.song_list)
+                raise StopIteration       # stops the iterator from continuing
 
     def preprocess_song(self, song_title):
         '''
@@ -86,22 +87,23 @@ class Dataset(object):
             if self.data_aug:
                 channels = self.augment_audio_cp(channels, self.aug_comp, sr=SAMPLE_RATE)
 
-            # make spectrogram
+            # make spectrogram and augment if desired
             spectrogram = self.create_spectrogram(channels, sr=SAMPLE_RATE)
+            if self.data_aug:
+                spectrogram = self.augment_spectrogram(spectrogram)
 
             # make the targets using information of the spectrogram and the song_df
-            target, target_dict = self.create_target(spectrogram, song_df)
+            target = self.create_target(spectrogram, song_df)
 
 
         # TODO: Implement the case where the FullSet_memory =- False and we need to load the songs individually everytime
         else:     # case of not keeping FullSet in memory
             print('FULLSET_MEMORY == FALSE NOT IMPLEMENTED YET. EVERYTHING ELSE WILL NOT FUNCTION PROPERLY')
-            spectrogram, target, target_dict = None, None, None
+            spectrogram, target = None, None
 
-        return spectrogram, target, target_dict
+        return spectrogram, target
 
     # START Helper Functions
-
     def get_song_list(self, dataset_type):
         '''
         Helper function to get the song list for the current Dataset type
@@ -146,6 +148,9 @@ class Dataset(object):
 
         return aug_comp
 
+    # END Helper Functions
+
+    # START Augmentation Functions
     def shift_augmentation(self, song_df):
         '''
         Randomly shifts the entire song_df a random amount. Self-implemented data augmentation function used to create a new "starting point" for the song
@@ -185,7 +190,55 @@ class Dataset(object):
 
         return augmented_channels
 
-    # END Helper Functions
+    def augment_spectrogram(self, spectrogram):
+        '''
+        Augments the spectrogram with the currently coded spectrogram augmentation functions defined interally.
+
+        Args:
+            spectrogram [np.array]: spectrogram of the curent song. Shape is either a n by m by 1 or n by m by 3
+
+        Returns:
+            np.array: spectrogram, either augmented or the original depending on the random triggering of the augmentations
+        '''
+
+        def bin_dropout(spectrogram, p):
+            '''
+            Spectrogram augmentation that drops out (sets to 0) random values of the spectrograms
+            '''
+            m, n, n_channels = spectrogram.shape
+            spectro_channels = []
+            for idx in range(n_channels):
+                if random.random() < p:
+                    # do the bin dropout augment
+                    mask = np.random.rand(m,n) < BIN_DROPOUT_RATIO
+                    spectro = spectrogram[:,:,idx][mask] = 0    # apply the mask to the current channel
+                else:
+                    spectro = spectrogram[:,:, idx]
+                spectro_channels.append(spectro)
+            return np.stack(spectro_channels, axis = -1) # stacks the spectro_channels back into a single np.array object
+
+        def S_noise(spectrogram, p):
+            '''
+            Spectrogram augmentation that multiplies the entire spectrogram by random amounts of small values.
+            '''
+            m, n, n_channels = spectrogram.shape
+            spectro_channels = []
+            for idx in range(n_channels):
+                if random.random() < p:
+                    # do the S_noise augment
+                    multiplier_matrix = np.random.uniform(low = 1-S_NOISE_RANGE_WIDTH/2, high = 1+S_NOISE_RANGE_WIDTH/2, size = (m,n))  # creates a matrix of random numbers the same shape as one channel of the spectrogram
+                    spectro = np.multiply(spectrogram[:,:,idx], multiplier_matrix) # augments the current spectro channel
+                else:
+                    spectro = spectrogram[:,:,idx]
+                spectro_channels.append(spectro)
+            return np.stack(spectro_channels, axis = -1)  # stacks the spectro_channels back into a single np.array object
+
+        spectrogram = bin_dropout(spectrogram.copy(), BIN_DROPOUT_CHANCE)
+        spectrogram = S_noise(spectrogram.copy(), S_NOISE_CHANCE)
+
+        return spectrogram
+
+    # END Augmentation Functions
 
     def create_spectrogram(self, channels, sr):
         '''
@@ -240,7 +293,6 @@ class Dataset(object):
         targets = np.zeros((n_classes, n_windows, n_channels), dtype=int)  # initializes as all zeros in shape of (n_classes number of rows, n_frames number of columns)
         sample_starts = list(song_df['sample start'])
 
-
         # the spectrogram represents the entire "song" or clip, and thus we assume it starts at sample 0 w.r.t. the song's samples
         # each window is WINDOW_SIZE long, and each window starts at sample idx_frame_in_list * HOP_SIZE
 
@@ -252,16 +304,13 @@ class Dataset(object):
             negative_window = int(window_start - NEGATIVE_WINDOW_FRACTION*WINDOW_SIZE)
             # TODO: fix this algorithmic approach so that it is more compatible with a larger WINDOW_SIZE while also being speedy
             if negative_window < sample_starts[tab_slice_idx] <= positive_window: # the drum event's sample_start falls within the acceptable range
-                targets[:, idx, :] = np.stack([labels_df.loc[tab_slice_idx].to_numpy() for _ in range(n_channels)], axis=-1)
+                targets[:, idx, :] = np.stack([labels_df.loc[tab_slice_idx].to_numpy() for _ in range(n_channels)], axis=-1)  # assumes all channels contain the same "drum data" for labeling purposes
             if sample_starts[tab_slice_idx] < negative_window:   # if the sliding windows have passed the current tab slice
                 tab_slice_idx +=1
             if tab_slice_idx >= len(sample_starts):
                 break
 
-        # create target_dictionary that maps the indices to the column name
-        target_dictionary = {idx : val for idx, val in enumerate(class_names)}
-
-        return targets, target_dictionary
+        return targets
 
 def one_hot_encode(df):
     """

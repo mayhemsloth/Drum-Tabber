@@ -789,9 +789,9 @@ class MusicAlignedTab(object):
         return mf_tab_final
     # END OF TAB STRING PROCESSING FUNCTIONS
 
-def create_FullSetMAT(songs_file_path):
+def create_FullSet_df(songs_file_path):
     '''
-    Function used to create a FullSetMAT to inspect summary statistics on an entire initial dataset of MATs, or to randomly look at different
+    Function used to create a FullSet_df to inspect summary statistics on an entire initial dataset of dfs, or to randomly look at different songs
 
     Args:
         songs_file_path [str]: Filepath to the songs folder
@@ -820,7 +820,7 @@ def create_FullSetMAT(songs_file_path):
     output_df = pd.concat(MATDF_dict, axis=0, ignore_index = False, join = 'outer', sort = False)
 
     print("...Replacing NaNs with " + blank_char + " for output")
-    output_df = output_df.fillna(blank_char)               # replace NaN with the blank_char
+    output_df = output_df.fillna(blank_char)               # replace NaN with the blank_char, for columns that didn't exist in one tab but existed in others
 
     MusicAlignedTab.labels_summary(output_df)
 
