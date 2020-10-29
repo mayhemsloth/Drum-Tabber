@@ -20,8 +20,8 @@ import librosa as lb
 import tensorflow as tf
 
 from src.configs import *
-from src.dataset import Dataset, clean_labels, collapse_class, one_hot_encode
-from src.utils import MusicAlignedTab, create_FullSetMAT
+from src.dataset import Dataset
+from src.utils import MusicAlignedTab, create_FullSet_df, clean_labels, collapse_class, one_hot_encode, create_configs_dict
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -40,6 +40,7 @@ def main():
     if os.path.exists(TRAIN_LOGDIR):
         shutil.rmtree(TRAIN_LOGDIR)
     writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
+    val_writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
 
     if TRAIN_FULLSET_MEMORY:       # able to create and load the entire FullSet into memory
         FullSet = create_FullSet_df(SONGS_PATH)
@@ -54,6 +55,7 @@ def main():
                                     cymbal_classes = CYMBAL_CLASSES)
         MusicAlignedTab.labels_summary(FullSet)   # prints a labels summary out to screen
         FullSet_encoded = one_hot_encode(FullSet)
+        configs_dict = create_configs_dict(FullSet_encoded, TRAIN_CONFIGS_SAVE_PATH)
     else:
         FullSet_encoded = None
 
@@ -62,25 +64,101 @@ def main():
     val_set = Dataset('val', FullSet_encoded)
 
     # epochs/steps variables (note that a "step" is currently setup as one song)
-    steps_per_epoch = len(train_set) # how many songs there are in the training set
+    steps_per_epoch = len(train_set) # how many songs there are in the training set *3 if necessary
     global_steps = tf.Variable(1, trainable=False, dtype=tf.int64)   # specifically used as args for later tf functions
     warmup_steps = TRAIN_WARMUP_EPOCHS * steps_per_epoch
     total_steps = TRAIN_EPOCHS * steps_per_epoch
 
     # load the model to be trained, based on configs.py options
-    # drum_tabber = create_DrumTabber(arg1, arg2, arg3)  # initial randomized weights
-    '''
+    # TODO: code the create_DrumTabber function, which initializes to randomized weights
+    drum_tabber = create_DrumTabber(n_features = configs_dict['num_features'],
+                                    n_classes = configs_dict['num_classes'],
+                                    training = True)  # initial randomized weights of a tf/keras model
+
     if TRAIN_FROM_CHECKPOINT:
         try:
             drum_tabber.load_weights('path_to_training_checkpoints_and_model_name')
         except ValueError:
             print("Shapes are incompatible, using default initial randomized weights")
-    '''
 
     # load the optimizer, using Adam
     optimizer = tf.keras.optimizers.Adam()
 
-    best_val_loss = 10000
+    # Train and Validation Step FUNCTIONS
+    # TODO: Finish coding the train and validation step functions
+    def train_step(spectrogram, target):
+        '''
+        Updates the model during one training step
+
+        Args:
+            spectrogram [np.array]: for this song, the spectrogram array of shape (n_features, n_windows, n_channels)
+            target [np.array]: for this song, the one-hot target array of shape (n_classes, n_windows, n_channels)
+
+        Returns:
+            variables about the training step (to be displayed)
+        '''
+        with tf.GradientTape() as tape:
+            n, m, n_channels = spectrogram.shape
+
+            # make prediction for each channel present in the spectrogram, and add total loss together
+            total_loss = 0
+            for idx in range(n_channels):
+                prediction = drum_tabber(spectrogram[:,:,idx], training = True)   # the forward pass though the current model, with training = True
+                # TODO: code the compute_loss function
+                # losses = compute_loss(prediction, targets, other_args)
+                # total_loss += losses ???
+
+            # apply gradients to update the model, the backward pass
+            gradients = tape.gradient(total_loss, drum_tabber.trainable_variables)
+            optmizer.apply_gradients(zip(gradients, drum_tabber.trainable_variables))
+
+            # update learning rate, using warmup and cosine decay
+            global_steps.assign_add(1)
+            if global_steps < warmup_steps:
+                lr = (global_steps / warmup_steps) * TRAIN_LR_INIT   # linearly increase  lr until out of warmup steps
+            else: # out of warmup epochs, so we use cosine decay for learning rate
+                lr = TRAIN_LR_END + 0.5 * (TRAIN_LR_INIT - TRAIN_LR_END)*(
+                    (1 + tf.cos( ( (global_steps - warmup_steps) / (total_steps - warmup_steps) ) * np.pi)))
+            optimizer.lr.assign(lr.numpy())
+
+            # write summary data
+            # TODO: understand what the writer TF is doing
+            '''
+            with writer.as_default():
+                tf.summary.scalar("lr", optimizer.lr, step=global_steps)
+                tf.summary.scalar("loss/total_loss", loss, step=global_steps)
+            writer.flush()
+            '''
+
+        return global_steps.numpy(), optimizer.lr.numpy(), total_loss.numpy()
+
+    def validation_step(spectrogram, target):
+        '''
+        Calculates losses for the validation step to see if the model got better during this training epoch
+
+        Args:
+            spectrogram [np.array]: for this song, the spectrogram array of shape (n_features, n_windows, n_channels)
+            target [np.array]: for this song, the one-hot target array of shape (n_classes, n_windows, n_channels)
+
+        Returns:
+            variables about the training step (to be displayed)
+        '''
+
+        with tf.GradientTape() as tape:
+            n, m, n_channels = spectrogram.shape
+
+            # make prediction for each channel present in the spectrogram, and add total loss together
+            total_loss = 0
+            for idx in range(n_channels):
+                prediction = drum_tabber(spectrogram, training = False)
+                # losses = compute_loss(prediction, target, other_args)
+                # total_loss += losses
+
+
+
+        return None
+
+    best_val_loss = 10000    # start with a high validation loss
     for epoch in range(TRAIN_EPOCHS):
         for spectrogram, target in train_set:
             # do a train step with the current spectrogram and target

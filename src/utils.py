@@ -7,10 +7,12 @@
 #   Description : Tools for pre-processing and post-processing of data
 #
 #================================================================
+
 import os
 import json
 import numpy as np
 import pandas as pd
+from datetime import date
 from pydub import AudioSegment   # main class from pydub package used to upload mp3 into Python and then get a NumPy array
 import IPython.display as ipd    # ability to play audio in Jupyter Notebooks if needed
 import librosa as lb             # loads the librosa package
@@ -825,3 +827,222 @@ def create_FullSet_df(songs_file_path):
     MusicAlignedTab.labels_summary(output_df)
 
     return output_df
+
+def one_hot_encode(df):
+    """
+    Encoder for the class labels of a tab dataframe. Encoded as a multi-label one hot vector: that is, a one hot vector that can be 1 in multiple classes for each example
+    Note that the labels from the time-keeping line are classifed as "beats" and "downbeats", not "offbeats" and "downbeats"
+    Note that the labels names are "encoded" (col + '_' + label) into the column names of the dataframe, regardless of how many labels you might have in each column originally
+
+    Args:
+        df [Dataframe]:a dataframe that has been passed through the cleaning and collapsing classes functions already
+
+    Returns:
+        Dataframe: an encoded version of the dataframe
+    """
+    tk_label, measure_char, blank_char = TK_LABEL, MEASURE_CHAR, BLANK_CHAR # get blank_char mainly
+
+    col_list = list(df.drop(columns = ['song slice', 'sample start'], errors = 'ignore').columns) # if 'ignore', suppress error and only existing labels are dropped
+    print(f'one_hot_encode: col_list before encoding = {col_list}')
+    for col in col_list:                     # goes through all the column names except 'song slice' and 'sample start'
+        uniques = [uniq for uniq in df[col].unique() if uniq is not blank_char] # list of unique values found in current column
+        if col == 'tk':                   # we are in the time-keeping column case, so we'll hard code handle this
+            df['tk_beat'] = df['tk'].apply(lambda row1: 1 if row1 != blank_char else 0)   # create a new tk_beat column if there is any non blank char
+            df['tk_downbeat'] = df['tk'].apply(lambda row2: 1 if row2 == DOWNBEAT_CHAR else 0)    # create a new tk_downbeat column where there is capital C, the previously HARD CODED downbeat label
+        else:     # we are in all the other column cases, so we have to generically code this
+            for label in uniques:   # we treat all the different labels as separate, regardless of how many we have on each line
+                df[col + '_' + label] = df[col].apply(lambda row3: 1 if row3 == label else 0)  # create a column named like "BD_o" where it is 1 any time you have that label and 0 elsewhere
+    df_encoded = df.drop(columns = col_list)    # drop the columns because we no longer need it as it has been encoded properly
+    print(f'one_hot_encode: col_list after encoding = {list(df_encoded.columns)}')
+
+    return df_encoded
+
+def clean_labels(df):
+    '''
+    Cleans the labels by replacing errors, common mistakes or different notations for labels that already exist
+
+    Args:
+        df [Dataframe]: Dataframe object that is a music aligned tab, or a FullSet tab, or some slice of a music aligned tab
+
+    Returns:
+        Dataframe: the dataframe but with the labels cleaned up according to the code in here
+    '''
+
+    master_format_dict = MASTER_FORMAT_DICT# grabs the dict of the master format to be used here
+    tk_label, measure_char, blank_char = TK_LABEL, MEASURE_CHAR, BLANK_CHAR  # get blank_char mainly
+
+    replace_dict = {}   # build up this dict to use as the replace in a later df.replace function
+    for drum_chars in master_format_dict.values():
+        replace_dict[drum_chars] = {}    # create an empty dict object for each drum char in master format dict so I can later use .update method always
+
+    # get useful, specific subsets of the column names (2 chars) used in the FullSet dataframe, as dictated by the master_format_dict, ensuring that they are in the FullSet_df column names
+    cymbals = [master_format_dict[x] for x in master_format_dict.keys() if 'cymbal' in x and master_format_dict[x] in df.columns]  # does NOT include hihat
+    hihat = master_format_dict['hi-hat']
+    snare = master_format_dict['snare drum']
+    ride = master_format_dict['ride cymbal']
+    drums = [master_format_dict[x] for x in master_format_dict.keys() if ('drum' in x or 'tom' in x) and master_format_dict[x] in df.columns]   # includes both drums and toms
+
+    """CLEAN UP 1: get rid of the "grab cymbal to stop sustain" notation in cymbal line tabs for all cymbals"""
+    for cymbal in cymbals:
+        replace_dict[cymbal].update({'#':blank_char})  # Constructing a dict where {column_name : {thing_to_be_replaced: value_replacing} }
+
+    """CLEAN UP 2: get rid of the 'f', 's', and 'S' on the 'HH' column (usually denotes foot stomp on hihat pedal)"""
+    replace_dict[hihat].update({'f':blank_char, 's':blank_char, 'S' : blank_char})
+
+    """CLEAN UP 3: replace the washy 'w' and 'W' with the normal washy hi-hat notation 'X'  (overall inconsistent notation but consistent enough to map properly)"""
+    replace_dict[hihat].update({'w': 'X', 'W':'X'})
+
+    """CLEAN UP 4: get rid of 'r' on the 'SD' column (rimshots on the snare drum) and change 'x' to 'o' (sometimes used in drum solos for easier reading)"""
+    replace_dict[snare].update({'r' : blank_char, 'x' : 'o', '0' : 'O'})
+
+    """CLEAN UP 5: get rid of doubles notation ('d') and flams ('f'), and replace them with equivalent single hits"""
+    for drum in drums:
+        replace_dict[drum].update({'d' : 'o', 'D' : 'O', 'f' : 'o'})
+    replace_dict[hihat].update({'d' : 'x', 'f' : 'x'})
+    replace_dict[ride].update({'d' : 'x', 'f' : 'x'})
+
+    """CLEAN UP 6: On hihat line, O and o are going to sound ~the same regardless of actual dynamic strength of hit."""
+    replace_dict[hihat].update({'O': 'o'})
+
+    """CLEAN UP 7: Replace m-dashes used in place of the blank char (here, n dash) in every column"""
+    for col in master_format_dict.values():
+        replace_dict[col].update({'—' : blank_char})
+
+    df = df.replace(to_replace = replace_dict, value = None) # do the replacing using the replace_dict
+
+    return df
+
+def collapse_class(FullSet_df, keep_dynamics = False, keep_bells = False, keep_toms_separate = False, hihat_classes = 1, cymbal_classes = 1):
+    """
+    Collapses the class labels in the FullSet dataframe to the desired amount of classes for output labels in Y.
+    Note that all of the collapsing choices will exist inside this function. There won't be a different place or prompt that
+    allows the classes to be customized further. This is where the class decisions making is occurring, HARD CODED into the function
+    Note that derived classes will be entirely lower case in the column names, where as normal classes will be entirely upper case
+
+    Args:
+        FullSet_df [Dataframe]: the entire set of music aligned tabs in one dataframe, cleaned up at this point
+        keep_dynamics [bool]: Default False. If False, collapses the dynamics labels into one single label (normally, capital vs. lower case). If True, don't collapse, effectively keeping dynamics as classes
+        keep_bells [bool]: Default False. If False, changes the bells into blank_char, effectively getting rid of them and ignoring their characteristic spectral features.
+                           If True, still changes them into blank_char, but create a new column in the dataframe called 'be' that places them in there
+        keep_toms_separate [bool]: Default False. If False, collapses the toms into one single tom class. If True, keep the toms labels separate and have multiple tom class
+        hihat_classes [int]: Default 1. Hihats have two, or arguably three, distinct classes. One class is the completely closed hihat hit that is a "tink" sound.
+                            A second very common way to play hihat is called "washy" where the two hihats are slightly open and can interact with each other after being hit
+                            A third class is the completely open hihat, where the top hihat doesn't interact with the bottom at all. This is similar to a cymbal hit
+                            Default 2 classes splits
+        cymbal_classes [int]: Default 1. Cymbals come in many sizes, tones, and flavors. The most reasonable thing to do is to collapse all cymbals into one class
+                              But what about the Ride cymbal? which normally is not "crashed" but hit like the hihat
+                              If == 2, Ride will be split out of the rest of the crash cymbals
+                              If == -1, keep all cymbal classes intact (generally for debugging)
+    Returns:
+        Dataframe: the FullSet dataframe but with classes collapsed, which most likely means that certain columns will be gone and new columns will be present
+    """
+
+    master_format_dict = MASTER_FORMAT_DICT # grabs the dict of the master format to be used here
+    tk_label, measure_char, blank_char = TK_LABEL, MEASURE_CHAR, BLANK_CHAR  # get blank_char mainly
+
+    # get useful, specific subsets of the column names (2 chars) used in the FullSet dataframe, as dictated by the master_format_dict, ensuring that they are in the FullSet_df column names
+    drums = [master_format_dict[x] for x in master_format_dict.keys() if ('drum' in x or 'tom' in x)  and master_format_dict[x] in FullSet_df.columns]  # drums AND toms in this list
+    cymbals = [master_format_dict[x] for x in master_format_dict.keys() if 'cymbal' in x and master_format_dict[x] in FullSet_df.columns]         # Notably EXCLUDING hi-hat
+    toms = [master_format_dict[x] for x in master_format_dict.keys() if 'tom' in x and master_format_dict[x] in FullSet_df.columns]                 # toms ONLY
+    hihat = master_format_dict['hi-hat']            # get the label for the hi-hat column from master_format_dict
+
+    """HIHAT - determine the number of classes desired in the hi-hat line. CRITICAL that this occurs before CYMBALS"""
+    FullSet_df = FullSet_df.replace(to_replace = {hihat: {'g': blank_char}}, value = None)  # gets rid of ghost notes on the hihat no matter how many classes are chosen
+    if hihat_classes == 2 or hihat_classes == 1:    # with only 1 or 2 classes, the washy ('X') and open ('o') hits are combined into one ('X') on the same line
+        FullSet_df = FullSet_df.replace(to_replace = {hihat: {'o': 'X'}}, value = None) # replaces all 'o' with 'X' in the hihat column
+        if hihat_classes == 1:                      # with only one class, need to keep the closed hi-hat ('x') on its own column, and then move the open 'o' and washy 'X' into the Crash Cymbal ('CC') column
+            FullSet_df.loc[FullSet_df[hihat] == 'X', master_format_dict['crash cymbal']] = FullSet_df.loc[FullSet_df[hihat] == 'X', hihat]  # sets the values in the CC column, in the rows where the hihat == 'X', to the values that are in the hihat column of those rows
+            FullSet_df = FullSet_df.replace(to_replace = {hihat: {'X': blank_char}}, value = None) # rids the hihat column of the 'X's that have been moved to the CC column
+    if hihat_classes == 3:
+        None            # keep the expected notations of 'x' for closed, 'X' for washy, and 'o' for completely open
+
+    """DYNAMICS - Making everything lower case that needs to be, and get rid of ghost notes; doesn't touch the hihat"""
+    if not keep_dynamics:   # in the case where the dynamics are NOT kept. That is, this code should collapse the dynamics
+        replace_dict = {}   # build up this dict to use as the replace in a later df.replace function
+        for element in drums + cymbals:
+            replace_dict[element] = {'X':'x', 'O':'o', 'g':blank_char} # prepare to search for X to replace with x, and O to replace with o whenever applicable
+        FullSet_df = FullSet_df.replace(to_replace = replace_dict, value = None) # do the replacing using the replace_dict
+
+    """BELLS - get rid of bell hits entirely or move them into a new column"""
+    if not keep_bells:          # in the case where bell hits are thrown away
+        FullSet_df = FullSet_df.replace(to_replace = 'b', value = blank_char) # NOTE: replaces 'b' ANYWHERE in the dataframe labels with the blank_char
+    else:                       # in the case where bell hits are moved to a new column and replaced with blank_char after that
+        FullSet_df['be'] = blank_char  # new bell column is titled 'be' for 'bell' and is initially all blank_char
+        replace_dict = {}
+        for cymbal in cymbals:
+            FullSet_df.loc[FullSet_df[cymbal] == 'b','be'] = FullSet_df.loc[FullSet_df[cymbal] == 'b', cymbal]
+            replace_dict[cymbal] = {'b':blank_char}
+        FullSet_df = FullSet_df.replace(to_replace = replace_dict, value = None) # do the replacing using the replace_dict
+
+    """TOMS - keep toms as their own classes or collapse into one"""
+    if not keep_toms_separate:         # in the case where toms are collapsed into one class
+        FullSet_df['at'] = blank_char    # The new column is titled 'at' for 'all toms' as it represents the labels of all the toms at once, initially set to the blank_char for all rows
+        for tom in toms:
+            FullSet_df.loc[FullSet_df[tom] != blank_char,'at'] = FullSet_df.loc[FullSet_df[tom] != blank_char, tom]  #  finds all the rows where a tom event occurs, and the value of those rows in the tom event
+        FullSet_df = FullSet_df.drop(columns = toms)  # drop the original toms columns
+
+    """CYMBALS - determine the number of cymbal classes"""
+    if cymbal_classes == 1:   # the case where we collapse all the cymbal classes down to one class
+        FullSet_df['ac'] = blank_char    # new column is titled 'ac' for 'all cymbals' as it represents the labels of all the cymbals at once
+        for cymbal in cymbals:
+            FullSet_df.loc[FullSet_df[cymbal] != blank_char, 'ac'] = FullSet_df.loc[FullSet_df[cymbal] != blank_char, cymbal]
+        FullSet_df = FullSet_df.drop(columns = cymbals)
+    if cymbal_classes == 2: # the case where we collapse all the cymbal classes except the ride cymbal down to one class
+        FullSet_df['mc'] = blank_char   # new column is titled 'mc' for 'most cymbals' as it represents most cymbals
+        most_cymbals = [x for x in cymbals if x != master_format_dict['ride cymbal']]   # grabbing all the cymbals not the ride cymbal
+        for cymbal in most_cymbals:
+            FullSet_df.loc[FullSet_df[cymbal] != blank_char, 'mc'] = FullSet_df.loc[FullSet_df[cymbal] != blank_char, cymbal]
+        FullSet_df = FullSet_df.drop(columns = most_cymbals)    # drop the cymbal columns no longer needed
+    if cymbal_classes == -1:
+        pass    # used for debugging, keeps the full cymbals set for further inspection
+
+    """BEATS AND DOWNBEATS - change the time-keeping line notation to denote downbeats and other beats"""
+    non_digits = [x for x in FullSet_df['tk'].unique() if not x.isdigit()]         # finds all non-digit values used in the tk column
+    non_ones_digits = [x for x in FullSet_df['tk'].unique() if x.isdigit() and x != '1'] # finds all digit values that are not equal to 1
+    replace_dict = {'tk': {}}     # create empty dict for the 'tk' column
+    for el in non_digits:
+        replace_dict['tk'].update({el: blank_char})    # replacing non-digits elements in tk column for blank_chars
+    for el in non_ones_digits:
+        replace_dict['tk'].update({el: BEAT_CHAR})           # replacing non-ones digits elements in tk column for BEAT_CHAR = 'c', which stands for 'click', as if you were listening to a metronome hearing clicks on the beats
+    replace_dict['tk'].update({'1': DOWNBEAT_CHAR})              # DOWNBEAT_CHAR = 'C' stands for 'Click', a louder click from a metronome, used to denote the downbeat
+    FullSet_df = FullSet_df.replace(to_replace = replace_dict, value = None)
+
+    return FullSet_df
+
+def create_configs_dict(df, path_to_write = None):
+    '''
+    Creates a dictionary of the index to the class labels and also writes to a JSON file that dictionary if given a filepath
+
+    Args:
+        df [Dataframe]: encoded FullSet_df that would contain all the information of the class names
+        path_to_write [str]: If not None, writes to a JSON file
+
+    Returns:
+        dict: the configs dictionary that is saved to a file if
+    '''
+
+    class_names = [x for x in list(df.columns) if '_' in x]
+    num_features = 2*N_MELS if INCLUDE_FO_DIFFERENTIAL else N_MELS
+    num_channels = 3 if INCLUDE_LR_CHANNELS else 1
+    month_date = date.today().strftime("-%b-%d")
+
+    configs_dict = {'class_names_dict': {idx: val for idx, val in enumerate(class_names)},
+                    'num_classes'   : len(class_names),
+                    'num_features'  : num_features,
+                    'num_channels'  : num_channels,
+                    'model_type'    : MODEL_TYPE,
+                    'window_size'   : WINDOW_SIZE,
+                    'hop_size'      : HOP_SIZE,
+                    'include_fo_differential'  : INCLUDE_FO_DIFFERENTIAL,
+                    'positive_window_fraction' : POSITIVE_WINDOW_FRACTION,
+                    'negative_window_fraction' : NEGATIVE_WINDOW_FRACTION,
+                    'classification_dict' : {'clean_date' : CLEAN_DATA, 'keep_dynamics': KEEP_DYNAMICS, 'keep_bells': KEEP_BELLS,
+                                             'keep_toms_seperate' : KEEP_TOMS_SEPARATE, 'hihat_classes' : HIHAT_CLASSES, 'cymbal_classes' : CYMBAL_CLASSES},
+                    'month_date' : month_date
+                    }
+
+    if path_to_write is not None:
+        with open(os.path.join(path_to_write, MODEL_TYPE + month_date + '.json' ), 'w') as outfile:
+            json.dump(configs_dict, outfile, indent=4)
+
+    return configs_dict

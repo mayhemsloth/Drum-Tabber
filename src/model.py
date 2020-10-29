@@ -8,13 +8,95 @@
 #
 #================================================================
 
+import os
+import json
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.layers import Conv2D, Input, LeakyReLU, ZeroPadding2D, BatchNormalization, MaxPool2D
+from tensorflow.keras.regularizers import l2  # might not need
 
 from src.configs import *
+
+
+
+
+
+'''  ~~~~~ Initial Drum-Tabber model goals~~~~~
+The Drum-Tabber model will be modeled after (or heavily informed by) the results shown in this paper:
+Drum Transcription via Joint Beat and Drum Modeling Using Convolutional Recurrent Neural Networks (2017)
+http://archives.ismir.net/ismir2017/paper/000123.pdf
+
+Initially the main thing I want to build is a "context aware" CNN model. That is, the model takes in sequences of windows for
+every window that exists in the spectrogram. This sequence of windows is called "context" in the paper, and I will use this
+terminology here as well. I want to make the context of each window to be a hyperparamater/configs constant, so I should
+code the cotext CNN model with this in mind (N_CONTEXT_PRE and _POST), including the fact that if you let the total context
+window length go to 1, it simplifies to a no-context CNN-only model.
+
+The reason that I want to build this context aware CNN model is because the paper shows it did pretty well compared to
+a context aware+recurrent NN model, and it is much easier for me to code this model first before getting into recurrent NN
+layers. Assuming you only use CNNs, the problem entirely transforms into a "image recognition" problem, and I am currently
+more familiar with that type of problem than anything using RNNs (although I do want to build a CRNN based model
+at some point). RNN are used for long-term structure in time sequenced data, but in reality a context CNN model MAY
+have enough informational context to learn the "structure" of a drum onset, but not of the long term drum patterns
+(which I particularly don't care about, but only care if it helps the model understand the drum onsets better, which
+I am hypothesizing will not)
+'''
+
+''' ~~~~~ Model input/outputs and number of classes ~~~~~
+Regardless of the model type, the inputs are going to be the same (log melspectrogram with 1-3 channels and varying numbers
+of mels / inclusion of first-time-derivative as determined by the configs.py file constants) Additionally, depending
+on the configs, the outputs will all be the same as well The "simplest" model that I will code for is one that predicts
+7 classes: beats, downbeats, BD, SD, at (all toms), ac (all cymbals), and HH (x only), but the model code should be
+flexible enough to accommodate any number of classes as determined by the configs parameters. That is, the number
+of classes that the model is prepped for needs to be gathered from some external source that already has
+knowledge of the encoded df.
+'''
+
+
+'''
+: This class extension was in the tutorial code, I need to look into if this is actually what needs to be done
+'''
+class BatchNormalization(BatchNormalization):
+    # "Frozen state" and "inference mode" are two separate concepts.
+    # `layer.trainable = False` is to freeze the layer, so the layer will use
+    # stored moving `var` and `mean` in the "inference mode", and both `gama`
+    # and `beta` will not be updated !
+    def call(self, x, training=False):
+        if not training:
+            training = tf.constant(False)
+        training = tf.logical_and(training, self.trainable)
+        return super().call(x, training)
+
+
+
+def create_DrumTabber(n_features, n_classes, training = False):
+    '''
+    Main function that creates the tf layers that describe the DrumTabber NN model and outputs a keras.Model object
+
+    Args:
+        n_features [int]: the number of features (rows) in the initial spectrogram 2D array
+        n_classes [int]: the number of classes to be classified in this model
+        training [bool]: Default False, pass True if the
+    '''
+
+    if MODEL_TYPE == 'Context-CNN':
+
+        input = Input()
+    else:
+        print('create_DrumTabber: Please choose a valid MODEL_TYPE in configs')
+        return None
+
+
+    drum_tabber = tf.keras.Model(input, output)
+    return drum_tabber
 
 
 '''
 : need a compute_loss function
 '''
+
+
+
 
 
 '''

@@ -16,6 +16,9 @@ SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatev
 INCLUDE_FO_DIFFERENTIAL = False  # keeps the first order differential over time of the spectrograms
 POSITIVE_WINDOW_FRACTION = 0.3   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
 NEGATIVE_WINDOW_FRACTION = 0.1   # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
+MODEL_TYPE = 'Context-CNN' # the model type desired to build. Possible choices are 'Context CNN'
+N_CONTEXT_PRE  = 15    # the number of context windows included before the target window in any context model type
+N_CONTEXT_POST = 15    # the number of context windows included after the target window in any context model type
 
 SAMPLE_RATE = 44100  # need to delete this whenever I finally implement the sr carryover from the song loading in
 
@@ -33,10 +36,12 @@ INCLUDE_LR_CHANNELS   = True            # if true, uses the Left and Right chann
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True   # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation checkpoints in the training process
 TRAIN_FULLSET_MEMORY  = True            # if true, utilizes the FullSet dataframe in memory to continuously pull from during training/val. ASSUMES FullSet (all songs) can be held in memory
+TRAIN_CONFIGS_SAVE_PATH = 'C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Saved-Configs'
 TRAIN_LOGDIR          = 'logs'
 TRAIN_CHECKPOINTS_FOLDER = 'checkpoints'
 TRAIN_FROM_CHECKPOINT = False
 
+TRAIN_BATCH_SIZE      = 128       # the number of individual images (slices of the spectrogram: windows and their contexts) before the model is updated
 TRAIN_LR_INIT         = 1e-4
 TRAIN_LR_END          = 1e-6
 TRAIN_WARMUP_EPOCHS   = 2
@@ -66,7 +71,7 @@ S_NOISE_RANGE_WIDTH        = 0.1   # width of range of numbers around 1 that S_n
 # validation options
 VAL_DATA_AUG         = False
 VAL_SONG_LIST        = ['misery_business', 'four_years']     # the songs that will be not used in the training set but instead in the validation set
-
+VAL_BATCH_SIZE       = 128
 
 
 # pre-processing and formatting options
