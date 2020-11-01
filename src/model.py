@@ -77,11 +77,14 @@ def create_DrumTabber(n_features, n_classes, training = False):
         n_features [int]: the number of features (rows) in the initial spectrogram 2D array
         n_classes [int]: the number of classes to be classified in this model
         training [bool]: Default False, pass True if the
+
+    Returns:
+        keras.Model: 
     '''
 
     if MODEL_TYPE == 'Context-CNN':
+        input_layer = Input(shape = (n_features, N_CONTEXT_PRE + 1 + N_CONTEXT_POST, ))
 
-        input = Input()
     else:
         print('create_DrumTabber: Please choose a valid MODEL_TYPE in configs')
         return None

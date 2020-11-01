@@ -64,7 +64,7 @@ def main():
     val_set = Dataset('val', FullSet_encoded)
 
     # epochs/steps variables (note that a "step" is currently setup as one song)
-    steps_per_epoch = len(train_set) # how many songs there are in the training set *3 if necessary
+    steps_per_epoch = len(train_set) # how many songs there are in the training set
     global_steps = tf.Variable(1, trainable=False, dtype=tf.int64)   # specifically used as args for later tf functions
     warmup_steps = TRAIN_WARMUP_EPOCHS * steps_per_epoch
     total_steps = TRAIN_EPOCHS * steps_per_epoch
@@ -83,6 +83,43 @@ def main():
 
     # load the optimizer, using Adam
     optimizer = tf.keras.optimizers.Adam()
+
+
+    def spectro_to_input_array(spectrogram, model_type):
+        '''
+        Expands a 2D spectrogram into slices of the correct shape to be input into the model
+
+        Args:
+            spectrogram [np.array]:
+            model_type [str]:
+
+        Returns:
+            np.array:
+        '''
+
+        n_features, n_windows = spectrogram.shape
+
+
+        if model_type == 'Context-CNN':
+
+            pre_context, post_context = N_CONTEXT_PRE, N_CONTEXT_POST
+            input_width = pre_context + 1 + post_context
+            min_value = np.min(spectrogram)
+
+            # assign into this np.array filled with the min values of the spectrogram (silence)
+            input_array = np.full(shape = (n_windows, n_features, input_width), fill_value = min_value)
+
+            for idx in range(n_windows):
+                if idx - pre_context < 0:    # in a window where you would slice before the beginning
+                    start = pre_context-idx
+                    input_array[idx, :, start:] = spectrogram[:, 0:idx+post_context+1]
+                elif idx + post_context+1 > n_windows: # in a window where you would slice past the end
+                    end = post_context+1 - (n_windows - idx)
+                    input_array[idx, :, :input_width-end] = spectrogram[:, idx-pre_context: n_windows ]
+                else:    # in a "normal" middle window where you slice into the spectrogram normally
+                    input_array[idx, :,:] = spectrogram[:, idx-pre_context : idx+post_context+1]
+
+            return input_array
 
     # Train and Validation Step FUNCTIONS
     # TODO: Finish coding the train and validation step functions
@@ -103,7 +140,11 @@ def main():
             # make prediction for each channel present in the spectrogram, and add total loss together
             total_loss = 0
             for idx in range(n_channels):
-                prediction = drum_tabber(spectrogram[:,:,idx], training = True)   # the forward pass though the current model, with training = True
+
+                # converts the current spectrogram into the correct input array
+                input_array = spectro_to_input_array(spectrogram[:,:,idx], MODEL_TYPE)
+
+                prediction = drum_tabber(input_array, training = True)   # the forward pass though the current model, with training = True
                 # TODO: code the compute_loss function
                 # losses = compute_loss(prediction, targets, other_args)
                 # total_loss += losses ???

@@ -95,6 +95,7 @@ class Dataset(object):
 
             # make spectrogram and augment if desired
             spectrogram = self.create_spectrogram(channels, sr=SAMPLE_RATE)
+
             if self.data_aug:
                 spectrogram = self.augment_spectrogram(spectrogram)
 
@@ -209,15 +210,17 @@ class Dataset(object):
 
         def bin_dropout(spectrogram, p):
             '''
-            Spectrogram augmentation that drops out (sets to 0) random values of the spectrograms
+            Spectrogram augmentation that drops out (sets to equivalent 0, or minimum value of the spectrogram due to dB unit)
+            random elements of the spectrograms
             '''
             m, n, n_channels = spectrogram.shape
             spectro_channels = []
             for idx in range(n_channels):
                 if random.random() < p:
+                    min_value = np.min(spectrogram[:,:,idx])
                     # do the bin dropout augment
                     mask = np.random.rand(m,n) < BIN_DROPOUT_RATIO
-                    spectrogram[:,:,idx][mask] = 0    # apply the mask to the current channel
+                    spectrogram[:,:,idx][mask] = min_value   # apply the mask to the current channel, changing them to the minimum value
                 spectro = spectrogram[:,:, idx] # transfer the current channel (augmented or not) to the spectro var
                 spectro_channels.append(spectro)
             return np.stack(spectro_channels, axis = -1) # stacks the spectro_channels back into a single np.array object
