@@ -83,23 +83,24 @@ def main():
 
     # load the optimizer, using Adam
     optimizer = tf.keras.optimizers.Adam()
+    optimizer.lr.assign( ( (global_steps / warmup_steps) * TRAIN_LR_INIT ).numpy())
 
-
+    # Model Input and Target massaging FUNCTIONS
     def spectro_to_input_array(spectrogram, model_type):
         '''
-        Expands a 2D spectrogram into slices of the correct shape to be input into the model
+        Expands a 2D song's channel's spectrogram into slices of the correct shape to be input into the model
 
         Args:
-            spectrogram [np.array]:
+            spectrogram [np.array]: 2D spectrogram of the current song and channel
             model_type [str]:
 
         Returns:
-            np.array:
+            np.array: 3D spectrogram object of the entire song with batch size in the first dimension. e.g., input_array[0,:,:] is the entire first input (a 2D array)
         '''
 
         n_features, n_windows = spectrogram.shape
 
-
+        # TODO: Finish the other model type options when they become available
         if model_type == 'Context-CNN':
 
             pre_context, post_context = N_CONTEXT_PRE, N_CONTEXT_POST
@@ -121,11 +122,34 @@ def main():
 
             return input_array
 
+    def target_to_target_array(target, model_type):
+        '''
+        Expands a 2D target array into slices of the correct shape to be the output of the model
+
+        Args:
+            target [np.array]: for this song and one channel, the one-hot target array of shape (n_classes, n_windows)
+            model_type [str]:
+
+        Returns:
+            np.array: 2D spectrogram object of the entire targets with batch size in the first dimension. e.g., target_array[0,:] is the entire first target (a 1D array of the one-hot-encoded classes)
+        '''
+
+        n_classes, n_windows = target.shape
+
+        # TODO: Finish the other model type options when they become available
+        if model_type == 'Context-CNN':
+            target_array = target.T  # only need the transpose because the target array is 2D (n_classes, n_windows)
+            # and we want (n_windows, n_classes)
+
+        return target_array
+
+
     # Train and Validation Step FUNCTIONS
     # TODO: Finish coding the train and validation step functions
-    def train_step(spectrogram, target):
+    def train_song_step(spectrogram, target):
         '''
-        Updates the model during one training step
+        Updates the model from the information of one song.
+        Note that multiple model update steps can (and will) occur in one call of train_song_step
 
         Args:
             spectrogram [np.array]: for this song, the spectrogram array of shape (n_features, n_windows, n_channels)
@@ -134,33 +158,58 @@ def main():
         Returns:
             variables about the training step (to be displayed)
         '''
-        with tf.GradientTape() as tape:
-            n, m, n_channels = spectrogram.shape
 
-            # make prediction for each channel present in the spectrogram, and add total loss together
-            total_loss = 0
-            for idx in range(n_channels):
+        # full spectrogram shape dimensions
+        n, m, n_channels = spectrogram.shape
 
-                # converts the current spectrogram into the correct input array
-                input_array = spectro_to_input_array(spectrogram[:,:,idx], MODEL_TYPE)
+        # treat each channel individually as a single "song"
+        for channel in range(n_channels):
 
-                prediction = drum_tabber(input_array, training = True)   # the forward pass though the current model, with training = True
-                # TODO: code the compute_loss function
-                # losses = compute_loss(prediction, targets, other_args)
-                # total_loss += losses ???
+            # converts the current spectrogram into the correct input array
+            input_array = np.expand_dims(spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE), axis=-1) # adding a channel dim at the end so that it is 4D for the model input
+            target_array = np.expand_dims(target_to_target_array(target[:,:,channel], MODEL_TYPE), axis=-1)  # adding a channel dim at the end so that it is 4D for the model input
+            num_examples = input_array.shape[0]    # total number of examples in this song/channel
 
-            # apply gradients to update the model, the backward pass
-            gradients = tape.gradient(total_loss, drum_tabber.trainable_variables)
-            optmizer.apply_gradients(zip(gradients, drum_tabber.trainable_variables))
+            # the number of model updates, based on the batch size and number of inputs
+            num_updates = int(np.ceil(num_examples/TRAIN_BATCH_SIZE))
 
-            # update learning rate, using warmup and cosine decay
-            global_steps.assign_add(1)
-            if global_steps < warmup_steps:
-                lr = (global_steps / warmup_steps) * TRAIN_LR_INIT   # linearly increase  lr until out of warmup steps
-            else: # out of warmup epochs, so we use cosine decay for learning rate
-                lr = TRAIN_LR_END + 0.5 * (TRAIN_LR_INIT - TRAIN_LR_END)*(
-                    (1 + tf.cos( ( (global_steps - warmup_steps) / (total_steps - warmup_steps) ) * np.pi)))
-            optimizer.lr.assign(lr.numpy())
+            for idx in range(num_updates):
+                losses = 0
+                start_batch_slice = idx*TRAIN_BATCH_SIZE
+                end_batch_slice = (idx+1)*TRAIN_BATCH_SIZE
+
+                # start recording the functions that are applied to autodifferentiate later
+                with tf.GradientTape() as tape:
+                    if end_batch_slice > num_examples:  # in the case where we are in the last batch, so we concat end of input_array/target_array with beginning samples of remaining length
+                        prediction = drum_tabber(np.concatenate( (input_array[start_batch_slice:, ...], input_array[ 0:end_batch_slice-num_examples , ...]) , axis=0), training = True)
+                        '''
+                        NOTE ON THIS DECISION AND RAMIFICATIONS ON HOW TO SUPPLY ADDITIONAL SAMPLES FOR CORRECT BATCH SIZE:
+                        To correct the batch size for the end samples, I chose to append the start of the song samples onto the end to correct the batch number size
+                        The "beginning" of each song will be oversampled one additional time for every epoch that occurs.
+                        However, due to data augmentation, the "beginning" of each song will be randomly chosen at SHIFT_CHANCE probability
+                        For this reason I feel that the model won't be trained on the exact same oversampled data too much, and
+                        thus why I decided to code it this way instead of some other way (randomly taking samples).
+                        Additionally, when I implement the Recurrent NN part, the order of the samples matter. This method
+                        preserves relative time order between the different samples.
+                        '''
+                        # TODO: code the compute_loss function
+                        # losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), other_args)
+                    else:
+                        prediction = drum_tabber(input_array[ start_batch_slice : end_batch_slice , ...], training = True)   # the forward pass though the current model, with training = True
+                        # losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], other_args)
+
+                    # apply gradients to update the model, the backward pass
+                    gradients = tape.gradient(losses, drum_tabber.trainable_variables)
+                    optmizer.apply_gradients(zip(gradients, drum_tabber.trainable_variables))
+
+        # after the full song is done, update learning rate, using warmup and cosine decay
+        global_steps.assign_add(1)
+        if global_steps < warmup_steps:
+            lr = (global_steps / warmup_steps) * TRAIN_LR_INIT   # linearly increase lr until out of warmup steps
+        else: # out of warmup epochs, so we use cosine decay for learning rate
+            lr = TRAIN_LR_END + 0.5 * (TRAIN_LR_INIT - TRAIN_LR_END)*(
+                (1 + tf.cos( ( (global_steps - warmup_steps) / (total_steps - warmup_steps) ) * np.pi)))
+        optimizer.lr.assign(lr.numpy())
 
             # write summary data
             # TODO: understand what the writer TF is doing
@@ -171,11 +220,11 @@ def main():
             writer.flush()
             '''
 
-        return global_steps.numpy(), optimizer.lr.numpy(), total_loss.numpy()
+        return global_steps.numpy(), optimizer.lr.numpy(), losses.numpy()
 
-    def validation_step(spectrogram, target):
+    def validation_song_step(spectrogram, target):
         '''
-        Calculates losses for the validation step to see if the model got better during this training epoch
+        Calculates losses for one song in the validation set to see if the model got better during this training epoch
 
         Args:
             spectrogram [np.array]: for this song, the spectrogram array of shape (n_features, n_windows, n_channels)
@@ -185,29 +234,49 @@ def main():
             variables about the training step (to be displayed)
         '''
 
-        with tf.GradientTape() as tape:
-            n, m, n_channels = spectrogram.shape
+        # full spectrogram shape dimensions
+        n, m, n_channels = spectrogram.shape
 
-            # make prediction for each channel present in the spectrogram, and add total loss together
-            total_loss = 0
-            for idx in range(n_channels):
-                prediction = drum_tabber(spectrogram, training = False)
-                # losses = compute_loss(prediction, target, other_args)
-                # total_loss += losses
+        # treat each channel individually as a single "song"
+        for channel in range(n_channels):
 
+            # converts the current spectrogram into the correct input array
+            input_array = spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE)
+            target_array = target_to_target_array(target[:,:,channel], MODEL_TYPE)
+            num_examples = input_array.shape[0]
 
+            # the number of model updates, based on the batch size and number of inputs
+            num_updates = int(np.ceil(num_examples/VAL_BATCH_SIZE))
 
-        return None
+            for idx in range(num_updates):
+                losses = 0
+                start_batch_slice = idx*VAL_BATCH_SIZE
+                end_batch_slice = (idx+1)*VAL_BATCH_SIZE
 
-    best_val_loss = 10000    # start with a high validation loss
+                # start recording the functions that are applied to autodifferentiate later
+                with tf.GradientTape() as tape:
+                    if end_batch_slice > num_examples:  # in the case where we are in the last batch, so we concat end of input_array/target_array with beginning samples of remaining length
+                        prediction = drum_tabber(np.concatenate( (input_array[start_batch_slice:, :, :], input_array[ 0:end_batch_slice-num_examples , :, :]) , axis=0), training = False)
+                        # TODO: code the compute_loss function
+                        # losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), other_args)
+                    else:
+                        prediction = drum_tabber(input_array[ start_batch_slice : end_batch_slice , :, :], training = False)   # the forward pass though the current model, with training = True
+                        # losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], other_args)
+
+        return losses.numpy()
+
+    best_val_loss = 100000    # start with a high validation loss
+
+    # loop over the number of epochs
     for epoch in range(TRAIN_EPOCHS):
-        for spectrogram, target in train_set:
+
+        for spectrogram, target in train_set:   # outputs a full song's spectrogram and target, over the entire dataset
             # do a train step with the current spectrogram and target
-            # results = train_step(spectrogram, target)
+            # results = train_song_step(spectrogram, target)
             pass
         for spectrogram, target in val_set:
             # do a validation step with the current spectrogram and target
-            # results = validation_step(spectrogram, target)
+            # results = validation_song_step(spectrogram, target)
             pass
 
     return None
@@ -301,8 +370,8 @@ if __name__ == '__main__':
 
         return global_steps.numpy(), optimizer.lr.numpy(), giou_loss.numpy(), conf_loss.numpy(), prob_loss.numpy(), total_loss.numpy()
 
-# create this validate_writer at this point for some reason???
-    validate_writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
+    # create this validate_writer at this point for some reason???
+        validate_writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
 
 # defines a function called validate_step
         with tf.GradientTape() as tape:
