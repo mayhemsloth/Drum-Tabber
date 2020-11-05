@@ -12,8 +12,7 @@ import os
 import json
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import Conv2D, Input, ReLU, LeakyReLU, Dense, BatchNormalization, MaxPool2D
-from tensorflow.keras.regularizers import L2  # might not need
+from tensorflow.keras.layers import Conv2D, Input, ReLU, LeakyReLU, Dense, BatchNormalization, MaxPool2D, Dropout, Flatten
 
 from src.configs import *
 
@@ -65,7 +64,7 @@ knowledge of the encoded df.
             return super().call(x, training)
 '''
 
-def conv2D_block(input, filter_num, kernel_shape, activ = 'relu'):
+def conv2D_block(input, filter_num, kernel_shape, activation = 'relu'):
     '''
     Helper builder function to define a Conv2D block, complete with BatchNorm and activation that follows the Conv2D layer
 
@@ -82,13 +81,13 @@ def conv2D_block(input, filter_num, kernel_shape, activ = 'relu'):
 
     output = Conv2D(filters = filter_num, kernel_size = kernel_shape, strides = (1,1),
                     padding = 'same',  data_format = 'channels_last', use_bias=False,
-                    kernel_regularizer=L2(l2 = 0.001) )(input)
+                    kernel_regularizer=tf.keras.regularizers.l2(0.001) )(input)
 
     output = BatchNormalization()(output)
 
-    if activ == 'relu':
+    if activation == 'relu':
         output = ReLU()(output)
-    if activ == 'leaky_relu':
+    if activation == 'leaky_relu':
         output = LeakyReLU(alpha=0.2)(output)
 
     return output
@@ -100,7 +99,8 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
     Args:
         n_features [int]: the number of features (rows) in the initial spectrogram 2D array
         n_classes [int]: the number of classes to be classified in this model
-        activ [str]: Default 'relu'. Changes all Conv2D layers and Dense layers (minus the output layer) to this activation. Other options include: 'leaky_relu'
+        activ [str]: Default 'relu'. Changes all Conv2D layers and Dense layers (minus the output layer) to this activation.
+                    : Other options include 'leaky_relu'
         training [bool]: Default False, pass True if the
 
     Returns:
@@ -163,6 +163,7 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
 '''
 TAKEN FROM CODE OF RICHARD VOGL from "TOWARDS MULTI-INSTRuMENT DRUM TRANSCRIPTION" 2018 paper
 Used to see an implementation of the peak picking code referenced in the paper
+'''
 '''
     def peak_picking(activations, threshold, smooth=None, pre_avg=0, post_avg=0,
                      pre_max=1, post_max=1):
@@ -253,3 +254,4 @@ Used to see an implementation of the peak picking code referenced in the paper
             return np.nonzero(detections)
         else:
             raise ValueError('`activations` must be either 1D or 2D')
+'''

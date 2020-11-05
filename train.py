@@ -22,6 +22,7 @@ import tensorflow as tf
 from src.configs import *
 from src.dataset import Dataset
 from src.utils import MusicAlignedTab, create_FullSet_df, clean_labels, collapse_class, one_hot_encode, create_configs_dict
+from src.model import create_DrumTabber
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -56,6 +57,7 @@ def main():
         MusicAlignedTab.labels_summary(FullSet)   # prints a labels summary out to screen
         FullSet_encoded = one_hot_encode(FullSet)
         configs_dict = create_configs_dict(FullSet_encoded, TRAIN_CONFIGS_SAVE_PATH)
+        print('train.py main(): FullSet_encoded created!')
     else:
         FullSet_encoded = None
 
@@ -65,7 +67,7 @@ def main():
 
     # epochs/steps variables (note that a "step" is currently setup as one song)
     steps_per_epoch = len(train_set) # how many songs there are in the training set
-    global_steps = tf.Variable(1, trainable=False, dtype=tf.int64)   # specifically used as args for later tf functions
+    global_steps = tf.Variable(0, trainable=False, dtype=tf.int64)   # specifically used as args for later tf functions
     warmup_steps = TRAIN_WARMUP_EPOCHS * steps_per_epoch
     total_steps = TRAIN_EPOCHS * steps_per_epoch
 
@@ -74,6 +76,8 @@ def main():
     drum_tabber = create_DrumTabber(n_features = configs_dict['num_features'],
                                     n_classes = configs_dict['num_classes'],
                                     training = True)  # initial randomized weights of a tf/keras model
+    print('train.py main(): drum_tabber model created!')
+    print(drum_tabber.summary())
 
     if TRAIN_FROM_CHECKPOINT:
         try:
@@ -144,6 +148,32 @@ def main():
         return target_array
 
 
+    def compute_loss(prediction, target_array, model_type):
+        '''
+        Computes the loss for the model type given
+
+        Args:
+            prediction [np.array]:
+            target_array [np.array]:
+            model_type [str]:
+
+        Returns:
+            tf.Tensor: Tensor of the same shape as logits with component-wise losses calculated
+        '''
+
+        if model_type == 'Context-CNN':
+            losses = tf.nn.sigmoid_cross_entropy_with_logits(labels = target_array.astype(np.float32), logits = prediction)
+            '''
+            # perhaps use weighted_cross_entropy_with_logits to allow a tradeoff of recall and precision
+            by up- or down-weighting the cost of a positive error relative to a negative error
+            '''
+
+        # TODO: implement loss type for the RCNN type
+        else:
+            print("compute_loss: No other model type compute loss has been implemented")
+
+        return losses
+
     # Train and Validation Step FUNCTIONS
     # TODO: Finish coding the train and validation step functions
     def train_song_step(spectrogram, target):
@@ -162,19 +192,22 @@ def main():
         # full spectrogram shape dimensions
         n, m, n_channels = spectrogram.shape
 
+        song_loss = 0
+
         # treat each channel individually as a single "song"
         for channel in range(n_channels):
 
             # converts the current spectrogram into the correct input array
             input_array = np.expand_dims(spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE), axis=-1) # adding a channel dim at the end so that it is 4D for the model input
-            target_array = np.expand_dims(target_to_target_array(target[:,:,channel], MODEL_TYPE), axis=-1)  # adding a channel dim at the end so that it is 4D for the model input
+            target_array = target_to_target_array(target[:,:,channel], MODEL_TYPE)
             num_examples = input_array.shape[0]    # total number of examples in this song/channel
 
             # the number of model updates, based on the batch size and number of inputs
             num_updates = int(np.ceil(num_examples/TRAIN_BATCH_SIZE))
+            channel_loss = 0
 
             for idx in range(num_updates):
-                losses = 0
+                total_loss = 0
                 start_batch_slice = idx*TRAIN_BATCH_SIZE
                 end_batch_slice = (idx+1)*TRAIN_BATCH_SIZE
 
@@ -183,7 +216,7 @@ def main():
                     if end_batch_slice > num_examples:  # in the case where we are in the last batch, so we concat end of input_array/target_array with beginning samples of remaining length
                         prediction = drum_tabber(np.concatenate( (input_array[start_batch_slice:, ...], input_array[ 0:end_batch_slice-num_examples , ...]) , axis=0), training = True)
                         '''
-                        NOTE ON THIS DECISION AND RAMIFICATIONS ON HOW TO SUPPLY ADDITIONAL SAMPLES FOR CORRECT BATCH SIZE:
+                        NOTE ON THE RAMIFICATIONS OF THIS DECISION ON HOW TO SUPPLY ADDITIONAL SAMPLES FOR CORRECT BATCH SIZE:
                         To correct the batch size for the end samples, I chose to append the start of the song samples onto the end to correct the batch number size
                         The "beginning" of each song will be oversampled one additional time for every epoch that occurs.
                         However, due to data augmentation, the "beginning" of each song will be randomly chosen at SHIFT_CHANCE probability
@@ -192,15 +225,19 @@ def main():
                         Additionally, when I implement the Recurrent NN part, the order of the samples matter. This method
                         preserves relative time order between the different samples.
                         '''
-                        # TODO: code the compute_loss function
-                        # losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), other_args)
+                        losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), MODEL_TYPE)
                     else:
                         prediction = drum_tabber(input_array[ start_batch_slice : end_batch_slice , ...], training = True)   # the forward pass though the current model, with training = True
-                        # losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], other_args)
+                        losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], MODEL_TYPE)
 
+                    total_loss += tf.math.reduce_mean(losses)   # gets the average of all the classes
                     # apply gradients to update the model, the backward pass
-                    gradients = tape.gradient(losses, drum_tabber.trainable_variables)
-                    optmizer.apply_gradients(zip(gradients, drum_tabber.trainable_variables))
+                    gradients = tape.gradient(total_loss, drum_tabber.trainable_variables)
+                    optimizer.apply_gradients(zip(gradients, drum_tabber.trainable_variables))
+                channel_loss += total_loss
+
+            channel_loss = channel_loss / num_updates
+            song_loss += channel_loss
 
         # after the full song is done, update learning rate, using warmup and cosine decay
         global_steps.assign_add(1)
@@ -211,16 +248,18 @@ def main():
                 (1 + tf.cos( ( (global_steps - warmup_steps) / (total_steps - warmup_steps) ) * np.pi)))
         optimizer.lr.assign(lr.numpy())
 
-            # write summary data
-            # TODO: understand what the writer TF is doing
-            '''
-            with writer.as_default():
-                tf.summary.scalar("lr", optimizer.lr, step=global_steps)
-                tf.summary.scalar("loss/total_loss", loss, step=global_steps)
-            writer.flush()
-            '''
+        # write summary data
+        # TODO: understand what the writer TF is doing
+        '''
+        with writer.as_default():
+            tf.summary.scalar("lr", optimizer.lr, step=global_steps)
+            tf.summary.scalar("loss/total_loss", loss, step=global_steps)
+        writer.flush()
+        '''
 
-        return global_steps.numpy(), optimizer.lr.numpy(), losses.numpy()
+        song_loss = song_loss/n_channels
+
+        return global_steps.numpy(), optimizer.lr.numpy(), song_loss.numpy()
 
     def validation_song_step(spectrogram, target):
         '''
@@ -237,47 +276,65 @@ def main():
         # full spectrogram shape dimensions
         n, m, n_channels = spectrogram.shape
 
+        song_loss = 0
+
         # treat each channel individually as a single "song"
         for channel in range(n_channels):
 
             # converts the current spectrogram into the correct input array
-            input_array = spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE)
+            input_array = np.expand_dims(spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE), axis=-1)
             target_array = target_to_target_array(target[:,:,channel], MODEL_TYPE)
             num_examples = input_array.shape[0]
 
             # the number of model updates, based on the batch size and number of inputs
             num_updates = int(np.ceil(num_examples/VAL_BATCH_SIZE))
+            channel_loss = 0
 
             for idx in range(num_updates):
-                losses = 0
+                total_loss = 0
                 start_batch_slice = idx*VAL_BATCH_SIZE
                 end_batch_slice = (idx+1)*VAL_BATCH_SIZE
 
-                # start recording the functions that are applied to autodifferentiate later
+                # start recording the functions that are applied to autodifferentiate
                 with tf.GradientTape() as tape:
                     if end_batch_slice > num_examples:  # in the case where we are in the last batch, so we concat end of input_array/target_array with beginning samples of remaining length
                         prediction = drum_tabber(np.concatenate( (input_array[start_batch_slice:, :, :], input_array[ 0:end_batch_slice-num_examples , :, :]) , axis=0), training = False)
-                        # TODO: code the compute_loss function
-                        # losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), other_args)
+                        losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), MODEL_TYPE)
                     else:
                         prediction = drum_tabber(input_array[ start_batch_slice : end_batch_slice , :, :], training = False)   # the forward pass though the current model, with training = True
-                        # losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], other_args)
+                        losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], MODEL_TYPE)
 
-        return losses.numpy()
+                total_loss += tf.math.reduce_mean(losses)   # gets the average of all the classes
+                channel_loss += total_loss
+
+            # after each channel, print the total channel mean loss
+            # print(f'Channel {channel} loss: {channel_loss/num_updates}')
+            channel_loss = channel_loss / num_updates
+            song_loss += channel_loss
+
+        song_loss = song_loss / n_channels
+
+        return song_loss.numpy()
 
     best_val_loss = 100000    # start with a high validation loss
 
     # loop over the number of epochs
     for epoch in range(TRAIN_EPOCHS):
-
+        print(f'Starting Epoch {epoch}/{TRAIN_EPOCHS}')
         for spectrogram, target in train_set:   # outputs a full song's spectrogram and target, over the entire dataset
             # do a train step with the current spectrogram and target
-            # results = train_song_step(spectrogram, target)
-            pass
+            loss_results = train_song_step(spectrogram, target)
+            current_step = loss_results[0] % steps_per_epoch
+            print('Epoch:{:2} Song{:4}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch, current_step, steps_per_epoch, loss_results[1], loss_results[2]))
+
+        total_val = 0
         for spectrogram, target in val_set:
             # do a validation step with the current spectrogram and target
-            # results = validation_song_step(spectrogram, target)
-            pass
+            results = validation_song_step(spectrogram, target)
+            total_val += results
+        print('\n\nEpoch: {:2} val_loss:{:8.6f} \n\n'.format(epoch, total_val/len(val_set)))
+
+        # TODO: add model saving code based on configs
 
     return None
 
@@ -425,7 +482,7 @@ if __name__ == '__main__':
             tf.summary.scalar("validate_loss/prob_val", prob_val/count, step=epoch)
         validate_writer.flush()
 
-        print("\n\ngiou_val_loss:{:7.2f}, conf_val_loss:{:7.2f}, prob_val_loss:{:7.2f}, total_val_loss:{:7.2f}\n\n".
+        print("giou_val_loss:{:7.2f}, conf_val_loss:{:7.2f}, prob_val_loss:{:7.2f}, total_val_loss:{:7.2f}".
               format(giou_val/count, conf_val/count, prob_val/count, total_val/count))
 
 # Saving the model based on the configs variable

@@ -9,7 +9,7 @@
 #================================================================
 
 # model options
-N_MELS      = 150        # number of mel bins to be created in the spectrograms
+N_MELS      = 50        # number of mel bins to be created in the spectrograms
 WINDOW_SIZE = 2048       # number of samples large that each spectro slice is. At 2048 and 44100 Hz sample rate, each window is 46 ms
 HOP_SIZE    = 441        # number of samples to hop each time when creating the spectrogram. 441 gives a 10ms hop size. That is, you produce a window every 10 ms
 SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatever it is in when you get the output from lb.melspectrogram
@@ -32,7 +32,7 @@ CYMBAL_CLASSES     = 1        # 1 is all cymbals, including ride, to one class '
 
 # train options
 SONGS_PATH = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs"    # the absolute filepath to the folder containing all the songs data
-INCLUDE_LR_CHANNELS   = True            # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
+INCLUDE_LR_CHANNELS   = False           # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True   # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation checkpoints in the training process
 TRAIN_FULLSET_MEMORY  = True            # if true, utilizes the FullSet dataframe in memory to continuously pull from during training/val. ASSUMES FullSet (all songs) can be held in memory
@@ -44,8 +44,8 @@ TRAIN_FROM_CHECKPOINT = False
 TRAIN_BATCH_SIZE      = 128       # the number of individual images (slices of the spectrogram: windows and their contexts) before the model is updated
 TRAIN_LR_INIT         = 1e-4
 TRAIN_LR_END          = 1e-6
-TRAIN_WARMUP_EPOCHS   = 2
-TRAIN_EPOCHS          = 100
+TRAIN_WARMUP_EPOCHS   = 1
+TRAIN_EPOCHS          = 4
 
 
 # augmentation options

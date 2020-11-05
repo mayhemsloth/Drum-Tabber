@@ -36,7 +36,7 @@ class Dataset(object):
         self.classes = [x for x in list(self.subset_df.columns) if '_' in x]  if self.subset_df is not None else None  # assumes that the labels in the df are appropriately named ('_' only being introduced at encoded phase)
         self.num_classes = len(self.classes)
         self.num_songs = len(self.song_list)
-        self.batch_size = TRAIN_BATCH_SIZE if if dataset_type == 'train' else VAL_BATCH_SIZE
+        self.batch_size = TRAIN_BATCH_SIZE if dataset_type == 'train' else VAL_BATCH_SIZE
 
         self.song_count = 0  # indexer for iterating through the set (song list)
 
