@@ -81,13 +81,13 @@ def conv2D_block(input, filter_num, kernel_shape, activation = 'relu'):
 
     output = Conv2D(filters = filter_num, kernel_size = kernel_shape, strides = (1,1),
                     padding = 'same',  data_format = 'channels_last', use_bias=False,
-                    kernel_regularizer=tf.keras.regularizers.l2(0.001) )(input)
+                    kernel_regularizer=tf.keras.regularizers.l2(0.0001) )(input)
 
     output = BatchNormalization()(output)
 
     if activation == 'relu':
         output = ReLU()(output)
-    if activation == 'leaky_relu':
+    elif activation == 'leaky_relu':
         output = LeakyReLU(alpha=0.2)(output)
 
     return output
@@ -137,11 +137,14 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
 
         # 2 x 256 FC Dense + relu activation
         output = Dense(256, activation = activ)(output)
+        output = BatchNormalization()(output)
         output = Dense(256, activation = activ)(output)
+        output = BatchNormalization()(output)
 
         # FC Dense sigmoid activation
         output = Dense(n_classes, activation = 'sigmoid')(output)
 
+    # TODO: handle the other model type cases
     else:
         print('create_DrumTabber: Please choose a valid MODEL_TYPE in configs')
         return None

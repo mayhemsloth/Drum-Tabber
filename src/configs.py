@@ -16,7 +16,7 @@ SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatev
 INCLUDE_FO_DIFFERENTIAL = False  # keeps the first order differential over time of the spectrograms
 POSITIVE_WINDOW_FRACTION = 0.3   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
 NEGATIVE_WINDOW_FRACTION = 0.1   # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
-MODEL_TYPE = 'Context-CNN' # the model type desired to build. Possible choices are 'Context CNN'
+MODEL_TYPE = 'Context-CNN' # the model type desired to build. Possible choices are 'Context-CNN'
 N_CONTEXT_PRE  = 15    # the number of context windows included before the target window in any context model type
 N_CONTEXT_POST = 15    # the number of context windows included after the target window in any context model type
 
@@ -38,14 +38,15 @@ TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation che
 TRAIN_FULLSET_MEMORY  = True            # if true, utilizes the FullSet dataframe in memory to continuously pull from during training/val. ASSUMES FullSet (all songs) can be held in memory
 TRAIN_CONFIGS_SAVE_PATH = 'C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Saved-Configs'
 TRAIN_LOGDIR          = 'logs'
-TRAIN_CHECKPOINTS_FOLDER = 'checkpoints'
+TRAIN_CHECKPOINTS_FOLDER = 'models/checkpoints'
+TRAIN_CHECKPOINT_MODEL_NAME = ''
 TRAIN_FROM_CHECKPOINT = False
 
 TRAIN_BATCH_SIZE      = 128       # the number of individual images (slices of the spectrogram: windows and their contexts) before the model is updated
 TRAIN_LR_INIT         = 1e-4
 TRAIN_LR_END          = 1e-6
-TRAIN_WARMUP_EPOCHS   = 1
-TRAIN_EPOCHS          = 4
+TRAIN_WARMUP_EPOCHS   = 0
+TRAIN_EPOCHS          = 2
 
 
 # augmentation options

@@ -377,8 +377,8 @@ class MusicAlignedTab(object):
 
         # find df_index of row with first drum note
         fdn_row_index = tab_df[tab_df.drop(['tk'], axis=1) != blank_char].first_valid_index()  # creates a mask that changes all the blank_char entries to NaN, then grabs the first row which has a non NaN value (after temporarily dropping the tk line, which could affect this mask)
-        print("All the following prints are from combine_tab_and_song function:")
-        print(f'first drum note row = {fdn_row_index}')
+        # print("All the following prints are from combine_tab_and_song function:")
+        # print(f'first drum note row = {fdn_row_index}')
         tab_len = len(tab_df.index)     # total length of the drum tab dataframe
 
         # slice up raw audio AFTER the first drum note, correcting for potential misalignment due to lopping off remainder of sample delta, and handling the triplet case
@@ -388,10 +388,10 @@ class MusicAlignedTab(object):
         song_slices_pre_fdn = self.get_pre_fdn_slice(song, fdn_sample_loc, sample_num, sample_delta, decimal_delta)
 
         """PRINTING USEFUL OUTPUT FOR SANITY CHECK"""
-        print('# of song slices post fdn = ' + str(len(song_slices_post_fdn)))
-        print('# of song slices pre fdn = ' + str(len(song_slices_pre_fdn)))
-        print("Produced number of song slices = " + str(len(song_slices_pre_fdn) + len(song_slices_post_fdn)))
-        print("Expected number of song slices (should be same for non-triplet songs) = " + str(sample_num/(sample_delta+decimal_delta)))
+        # print('# of song slices post fdn = ' + str(len(song_slices_post_fdn)))
+        # print('# of song slices pre fdn = ' + str(len(song_slices_pre_fdn)))
+        # print("Produced number of song slices = " + str(len(song_slices_pre_fdn) + len(song_slices_post_fdn)))
+        # print("Expected number of song slices (should be same for non-triplet songs) = " + str(sample_num/(sample_delta+decimal_delta)))
 
         # take the two song slices, and the location of the first drum note index, and produce a dataframe of the same length as the tab frame,
         # with the song slices in the correct index position
@@ -545,12 +545,14 @@ class MusicAlignedTab(object):
         sample_start_list = sample_start_pre + sample_start_post   # concatenate the two lists
 
 
-        """PRINTING USEFUL OUTPUT FOR SANITY CHECK"""
-        print("tab length = " + str(tab_len) + "     datatype: " + str(type(tab_len)))
-        print("len(song_slices_tab_indexed) = " + str(len(song_slices_tab_indexed)) + "     datatype of object: " + str(type(song_slices_tab_indexed)))
-        print("song_slices_tab_indexed[0].shape = " + str(song_slices_tab_indexed[0].shape) + "     datatype of [0]: " + str(type(song_slices_tab_indexed[0])))
-        print("np.array(song_slices_tab_indexed).shape = " + str(np.array(song_slices_tab_indexed, dtype='object').shape))
-        print(f'len(sample_start_list) = {len(sample_start_list)}')
+        """PRINTING USEFUL OUTPUT FOR SANITY CHECK START"""
+        # print("tab length = " + str(tab_len) + "     datatype: " + str(type(tab_len)))
+        # print("len(song_slices_tab_indexed) = " + str(len(song_slices_tab_indexed)) + "     datatype of object: " + str(type(song_slices_tab_indexed)))
+        # print("song_slices_tab_indexed[0].shape = " + str(song_slices_tab_indexed[0].shape) + "     datatype of [0]: " + str(type(song_slices_tab_indexed[0])))
+        # print("np.array(song_slices_tab_indexed).shape = " + str(np.array(song_slices_tab_indexed, dtype='object').shape))
+        # print(f'len(sample_start_list) = {len(sample_start_list)}')
+        """PRINTING USEFUL OUTPUT FOR SANITY CHECK END"""
+
 
         # Force the current "list" into a dictionary so that pandas ALWAYS INTERPRETS IT AS A LIST OF ARRAYS, not just one single large 3D matrix
         tab_dict = {'song slice': song_slices_tab_indexed, 'sample start' : sample_start_list} # HARD CODED name

@@ -24,7 +24,7 @@ from src.configs import *
 # defining the Dataset class
 class Dataset(object):
     '''
-    Custom Dataset object used to iterate through the training and validation data during model training
+    Custom Dataset object class used to iterate through the training and validation data during model training
     '''
     def __init__(self, dataset_type, FullSet_df = None):   # dataset_type = 'train' or 'val', FullSet_df = encoded FullSet of songs in memory
         self.song_list = self.get_song_list(dataset_type)# train and validation subfolders will be contained in this folder file path form configs
@@ -52,7 +52,7 @@ class Dataset(object):
             if self.song_count < self.num_songs:   # if <, then in this iterable call we still have songs remaining in the Dataset
                 # do preprocessing here and return the spectrogram, targets of the song
                 song_title = self.song_list[self.song_count]
-                print(f'Dataset class __next__:{song_title}')
+                print(f'Dataset class __next__: preprocessing {song_title}')
                 spectrogram, target = self.preprocess_song(song_title)
 
                 self.song_count += 1
@@ -264,7 +264,7 @@ class Dataset(object):
         spectro_channels = [] # create either 1 spectrogram or 3 depending on how many channels are being used
         for channel in channels:
             spectro = lb.feature.melspectrogram(np.asfortranarray(channel), sr=sr, n_fft = WINDOW_SIZE, hop_length = HOP_SIZE, center = False, n_mels = N_MELS) # numpy array of shape (n_mels, t)
-            print(f'create_spectrogram: spectro.shape = {spectro.shape}')
+            # print(f'create_spectrogram: spectro.shape = {spectro.shape}')
             if SHIFT_TO_DB:
                 spectro = lb.power_to_db(spectro, ref = np.max)
             if INCLUDE_FO_DIFFERENTIAL:
@@ -275,7 +275,7 @@ class Dataset(object):
             spectro_channels.append(spectro)
 
         spectrogram = np.stack(spectro_channels, axis = -1) # spectrogram channel dimension order is mono, L, R
-        print(f'create_spectrogram: spectrogram.shape after ftd = {spectrogram.shape}')
+        # print(f'create_spectrogram: spectrogram.shape after ftd = {spectrogram.shape}')
 
         return spectrogram # spectrogram has shape of (n_mels (perhaps x2), t (determined by length of song and HOP_SIZE), n_channels (1 or 3) )
 

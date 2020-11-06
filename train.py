@@ -75,13 +75,14 @@ def main():
     # TODO: code the create_DrumTabber function, which initializes to randomized weights
     drum_tabber = create_DrumTabber(n_features = configs_dict['num_features'],
                                     n_classes = configs_dict['num_classes'],
+                                    activ = 'relu',
                                     training = True)  # initial randomized weights of a tf/keras model
     print('train.py main(): drum_tabber model created!')
     print(drum_tabber.summary())
 
-    if TRAIN_FROM_CHECKPOINT:
+    if TRAIN_FROM_CHECKPOINT and len(TRAIN_CHECKPOINT_MODEL_NAME) != 0:
         try:
-            drum_tabber.load_weights('path_to_training_checkpoints_and_model_name')
+            drum_tabber.load_weights(os.path.join(TRAIN_CHECKPOINTS_FOLDER, TRAIN_CHECKPOINT_MODEL_NAME))
         except ValueError:
             print("Shapes are incompatible, using default initial randomized weights")
 
@@ -316,25 +317,38 @@ def main():
 
         return song_loss.numpy()
 
-    best_val_loss = 100000    # start with a high validation loss
+    best_val_loss = 1000.0    # start with a high validation loss
+    n_val_songs = len(val_set)
 
     # loop over the number of epochs
     for epoch in range(TRAIN_EPOCHS):
-        print(f'Starting Epoch {epoch}/{TRAIN_EPOCHS}')
+        print(f'Starting Epoch {epoch+1}/{TRAIN_EPOCHS}')
         for spectrogram, target in train_set:   # outputs a full song's spectrogram and target, over the entire dataset
             # do a train step with the current spectrogram and target
             loss_results = train_song_step(spectrogram, target)
             current_step = loss_results[0] % steps_per_epoch
-            print('Epoch:{:2} Song{:4}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch, current_step, steps_per_epoch, loss_results[1], loss_results[2]))
+            print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch+1, current_step, steps_per_epoch, loss_results[1], loss_results[2]))
 
         total_val = 0
         for spectrogram, target in val_set:
             # do a validation step with the current spectrogram and target
             results = validation_song_step(spectrogram, target)
             total_val += results
-        print('\n\nEpoch: {:2} val_loss:{:8.6f} \n\n'.format(epoch, total_val/len(val_set)))
+        print('\n\nEpoch: {:2} val_loss:{:8.6f} \n\n'.format(epoch+1, total_val/n_val_songs))
 
         # TODO: add model saving code based on configs
+        if TRAIN_SAVE_CHECKPOINT_ALL_BEST:
+            save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date']+"total_val_loss_{:8.6f}".format(total_val/n_val_songs))
+            drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
+        if TRAIN_SAVE_CHECKPOINT_MAX_BEST and (total_val / n_val_songs) < best_val_loss:
+            save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date'])
+            best_val_loss = total_val / n_val_songs
+            drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
+        if not TRAIN_SAVE_CHECKPOINT_ALL_BEST and not TRAIN_SAVE_CHECKPOINT_MAX_BEST:
+            save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date'])
+            best_val_loss = total_val / n_val_songs
+            drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
+
 
     return None
 
@@ -381,71 +395,71 @@ if __name__ == '__main__':
     # Loads the optimizer
         optimizer = tf.keras.optimizers.Adam()
 
-# defines a function called train_step
-    def train_step(image_data, target):
-        with tf.GradientTape() as tape:
-            # makes the prediction with the image_data given to the train step (most likely the batch of images concatenated)
-            # sets your running losses at 0
-            pred_result = yolo(image_data, training=True)
-            giou_loss=conf_loss=prob_loss=0
+    # defines a function called train_step
+        def train_step(image_data, target):
+            with tf.GradientTape() as tape:
+                # makes the prediction with the image_data given to the train step (most likely the batch of images concatenated)
+                # sets your running losses at 0
+                pred_result = yolo(image_data, training=True)
+                giou_loss=conf_loss=prob_loss=0
 
-            # COMPUTES LOSSES HERE using the compute_loss function and adds the running total together
-            grid = 3 if not TRAIN_YOLO_TINY else 2
-            for i in range(grid):
-                conv, pred = pred_result[i*2], pred_result[i*2+1]
-                loss_items = compute_loss(pred, conv, *target[i], i, CLASSES=TRAIN_CLASSES)
-                giou_loss += loss_items[0]
-                conf_loss += loss_items[1]
-                prob_loss += loss_items[2]
+                # COMPUTES LOSSES HERE using the compute_loss function and adds the running total together
+                grid = 3 if not TRAIN_YOLO_TINY else 2
+                for i in range(grid):
+                    conv, pred = pred_result[i*2], pred_result[i*2+1]
+                    loss_items = compute_loss(pred, conv, *target[i], i, CLASSES=TRAIN_CLASSES)
+                    giou_loss += loss_items[0]
+                    conf_loss += loss_items[1]
+                    prob_loss += loss_items[2]
 
-            total_loss = giou_loss + conf_loss + prob_loss
+                total_loss = giou_loss + conf_loss + prob_loss
 
-            # IMPORTANT CODE HERE!!! APPLIES THE GRADIENTS via the tape.gradient and optimizer.apply_gradients functions
-            # Both of these are from TF and are not custom created .
-            gradients = tape.gradient(total_loss, yolo.trainable_variables)
-            optimizer.apply_gradients(zip(gradients, yolo.trainable_variables))
+                # IMPORTANT CODE HERE!!! APPLIES THE GRADIENTS via the tape.gradient and optimizer.apply_gradients functions
+                # Both of these are from TF and are not custom created .
+                gradients = tape.gradient(total_loss, yolo.trainable_variables)
+                optimizer.apply_gradients(zip(gradients, yolo.trainable_variables))
 
-            # update learning rate
-            # about warmup: https://arxiv.org/pdf/1812.01187.pdf&usg=ALkJrhglKOPDjNt6SHGbphTHyMcT0cuMJg
-            global_steps.assign_add(1)    # global_steps.assign_add(1) is how to increment a tf.Variable, which is what global_steps must be
-            if global_steps < warmup_steps:# and not TRAIN_TRANSFER:
-                lr = global_steps / warmup_steps * TRAIN_LR_INIT
-            else:
-            # THIS IS THE COSINE LR. Note the tf.cos() function in there
-                lr = TRAIN_LR_END + 0.5 * (TRAIN_LR_INIT - TRAIN_LR_END)*(
-                    (1 + tf.cos((global_steps - warmup_steps) / (total_steps - warmup_steps) * np.pi)))
-            optimizer.lr.assign(lr.numpy())
+                # update learning rate
+                # about warmup: https://arxiv.org/pdf/1812.01187.pdf&usg=ALkJrhglKOPDjNt6SHGbphTHyMcT0cuMJg
+                global_steps.assign_add(1)    # global_steps.assign_add(1) is how to increment a tf.Variable, which is what global_steps must be
+                if global_steps < warmup_steps:# and not TRAIN_TRANSFER:
+                    lr = global_steps / warmup_steps * TRAIN_LR_INIT
+                else:
+                # THIS IS THE COSINE LR. Note the tf.cos() function in there
+                    lr = TRAIN_LR_END + 0.5 * (TRAIN_LR_INIT - TRAIN_LR_END)*(
+                        (1 + tf.cos((global_steps - warmup_steps) / (total_steps - warmup_steps) * np.pi)))
+                optimizer.lr.assign(lr.numpy())
 
-            # writing summary data, I do't actually know what this does
-            with writer.as_default():
-                tf.summary.scalar("lr", optimizer.lr, step=global_steps)
-                tf.summary.scalar("loss/total_loss", total_loss, step=global_steps)
-                tf.summary.scalar("loss/giou_loss", giou_loss, step=global_steps)
-                tf.summary.scalar("loss/conf_loss", conf_loss, step=global_steps)
-                tf.summary.scalar("loss/prob_loss", prob_loss, step=global_steps)
-            writer.flush()
+                # writing summary data, I do't actually know what this does
+                with writer.as_default():
+                    tf.summary.scalar("lr", optimizer.lr, step=global_steps)
+                    tf.summary.scalar("loss/total_loss", total_loss, step=global_steps)
+                    tf.summary.scalar("loss/giou_loss", giou_loss, step=global_steps)
+                    tf.summary.scalar("loss/conf_loss", conf_loss, step=global_steps)
+                    tf.summary.scalar("loss/prob_loss", prob_loss, step=global_steps)
+                writer.flush()
 
-        return global_steps.numpy(), optimizer.lr.numpy(), giou_loss.numpy(), conf_loss.numpy(), prob_loss.numpy(), total_loss.numpy()
+            return global_steps.numpy(), optimizer.lr.numpy(), giou_loss.numpy(), conf_loss.numpy(), prob_loss.numpy(), total_loss.numpy()
 
     # create this validate_writer at this point for some reason???
         validate_writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
 
-# defines a function called validate_step
-        with tf.GradientTape() as tape:
-            # makes the prediction with the image_data given to it, but this time training=False in the prediction creation
-            pred_result = yolo(image_data, training=False)
-            giou_loss=conf_loss=prob_loss=0
+    # defines a function called validate_step
+            with tf.GradientTape() as tape:
+                # makes the prediction with the image_data given to it, but this time training=False in the prediction creation
+                pred_result = yolo(image_data, training=False)
+                giou_loss=conf_loss=prob_loss=0
 
-            # COMPUTE LOSSES HERE using the same code as before in the train_step
-            grid = 3 if not TRAIN_YOLO_TINY else 2
-            for i in range(grid):
-                conv, pred = pred_result[i*2], pred_result[i*2+1]
-                loss_items = compute_loss(pred, conv, *target[i], i, CLASSES=TRAIN_CLASSES)
-                giou_loss += loss_items[0]
-                conf_loss += loss_items[1]
-                prob_loss += loss_items[2]
+                # COMPUTE LOSSES HERE using the same code as before in the train_step
+                grid = 3 if not TRAIN_YOLO_TINY else 2
+                for i in range(grid):
+                    conv, pred = pred_result[i*2], pred_result[i*2+1]
+                    loss_items = compute_loss(pred, conv, *target[i], i, CLASSES=TRAIN_CLASSES)
+                    giou_loss += loss_items[0]
+                    conf_loss += loss_items[1]
+                    prob_loss += loss_items[2]
 
-            total_loss = giou_loss + conf_loss + prob_loss
+                total_loss = giou_loss + conf_loss + prob_loss
 
             # Note that we do nothing else to anything. The validation set is reserved only for calculating the losses on a non-training data set.
 
