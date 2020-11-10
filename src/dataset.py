@@ -11,8 +11,9 @@
 import os
 import json
 import random
+import warnings
 import numpy as np
-import librosa as lb          # loads the librosa package
+import librosa as lb
 import tensorflow as tf
 import librosa.display
 
@@ -53,7 +54,9 @@ class Dataset(object):
                 # do preprocessing here and return the spectrogram, targets of the song
                 song_title = self.song_list[self.song_count]
                 print(f'Dataset class __next__: preprocessing {song_title}')
-                spectrogram, target = self.preprocess_song(song_title)
+                with warnings.catch_warnings():    # used to ignore the Pydub warning that always comes up
+                    warnings.simplefilter("ignore")
+                    spectrogram, target = self.preprocess_song(song_title)
 
                 self.song_count += 1
                 return spectrogram, target
@@ -268,7 +271,7 @@ class Dataset(object):
             if SHIFT_TO_DB:
                 spectro = lb.power_to_db(spectro, ref = np.max)
             if INCLUDE_FO_DIFFERENTIAL:
-                spectro_ftd = lb.feature.delta(spectro, order=1)    # calculate the first time derivative of the spectrogram
+                spectro_ftd = lb.feature.delta(data = spectro, width = 9, order=1, axis = -1)    # calculate the first time derivative of the spectrogram. Uses 9 frames to calculate
                     # spectro_f(irst)t(ime)d(erivative).shape = (n_mels, t) SAME AS spectro
                 spectro = np.concatenate([spectro, spectro_ftd], axis = 0)    # first time derivative attached at end of normal log mel spectrogram (n_mels of spectro, then n_mels of ftd)
                     # spectro.shape = (2* n_mels, t)

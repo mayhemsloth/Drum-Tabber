@@ -12,10 +12,11 @@ import os
 import json
 import numpy as np
 import pandas as pd
+import librosa as lb
 from datetime import date
 from pydub import AudioSegment   # main class from pydub package used to upload mp3 into Python and then get a NumPy array
 import IPython.display as ipd    # ability to play audio in Jupyter Notebooks if needed
-import librosa as lb             # loads the librosa package
+
 
 from src.configs import *
 
@@ -283,7 +284,9 @@ class MusicAlignedTab(object):
         elif song_info["channels"] == "stereo":     # if the song is stereo, do nothing
             channel_mono = False
 
-        lb_song, _ = lb.core.load(song_title, sr=None, mono=channel_mono) # uses librosa to output a np.ndarray of shape (n,) or (2,n) depending on the channels
+        lb_song, sr_song = lb.core.load(song_title, sr=None, mono=channel_mono) # uses librosa to output a np.ndarray of shape (n,) or (2,n) depending on the channels
+
+        song_info['sr'] = sr_song  # add the sample rate, as loaded from librosa, into the song_info dict
 
         return lb_song, song_info
 
@@ -1011,13 +1014,12 @@ def collapse_class(FullSet_df, keep_dynamics = False, keep_bells = False, keep_t
 
     return FullSet_df
 
-def create_configs_dict(df, path_to_write = None):
+def create_configs_dict(df):
     '''
-    Creates a dictionary of the index to the class labels and also writes to a JSON file that dictionary if given a filepath
+    Creates a dictionary of the index to the class labels
 
     Args:
         df [Dataframe]: encoded FullSet_df that would contain all the information of the class names
-        path_to_write [str]: If not None, writes to a JSON file
 
     Returns:
         dict: the configs dictionary that is saved to a file if
@@ -1032,9 +1034,13 @@ def create_configs_dict(df, path_to_write = None):
                     'num_classes'   : len(class_names),
                     'num_features'  : num_features,
                     'num_channels'  : num_channels,
+                    'n_mels'        : N_MELS,
                     'model_type'    : MODEL_TYPE,
                     'window_size'   : WINDOW_SIZE,
                     'hop_size'      : HOP_SIZE,
+                    'shift_to_db'   : SHIFT_TO_DB,
+                    'n_context_pre' : N_CONTEXT_PRE,
+                    'n_context_post': N_CONTEXT_POST,
                     'include_fo_differential'  : INCLUDE_FO_DIFFERENTIAL,
                     'positive_window_fraction' : POSITIVE_WINDOW_FRACTION,
                     'negative_window_fraction' : NEGATIVE_WINDOW_FRACTION,
@@ -1043,8 +1049,129 @@ def create_configs_dict(df, path_to_write = None):
                     'month_date' : month_date
                     }
 
-    if path_to_write is not None:
-        with open(os.path.join(path_to_write, MODEL_TYPE + month_date + '.json' ), 'w') as outfile:
-            json.dump(configs_dict, outfile, indent=4)
-
     return configs_dict
+
+# START OF MODEL SAVING, LOADING, AND INFERENCE FUNCTIONS
+def save_drum_tabber_model(drum_tabber, model_name, saved_models_path, configs_dict):
+    '''
+    Saves a keras.Model drum-tabber to the correct location, along with the configs dictionary used to build that model
+
+    Args:
+        drum_tabber [keras.Model]: the trained model for automatically tabbing drums in songs
+        model_name [str]: custom name given to the model to be saved. Determines the subfolder name
+        saved_models_path [str]: filepath to the folder where the models are saved
+        configs_dict [dict]: dictionary that has compiled configuration options
+
+    Returns:
+        None (writes to disk)
+    '''
+
+    model_name_folder_path = os.path.join(saved_models_path, model_name)
+
+    if not os.path.exists(model_name_folder_path):
+        os.mkdir(model_name_folder_path)   # makes the model name folder
+
+    # saves the model in the new folder for that model
+    drum_tabber.save(filepath = model_name_folder_path)
+
+    # saves the configs_dict in the same folder
+    # TODO: check that you can load a model if something else has been saved in that folder
+    with open(os.path.join(model_name_folder_path, model_name + '-configs.json' ), 'w') as outfile:
+        json.dump(configs_dict, outfile, indent=4)
+
+    return None
+
+def load_drum_tabber_model(model_name, saved_models_path):
+    '''
+    Simple human-facing helper function to load drum_tabber models more easily. Assumes the saved model was
+    created using the save_drum_tabber_model function (and thus will have a valid configs_dict in the folder)
+
+    Args:
+        model_name [str]:
+        saved_models_path [str]:
+
+    Returns:
+        keras.model: drum_tabber model loaded from the saved file directory
+        dict: configs_dict associated with the saved model
+    '''
+    drum_tabber = tf.keras.models.load_model(os.path.join(saved_models_path, model_name))
+
+    with open(os.path.join(saved_models_path, model_name, model_name+'-configs.json'), 'r') as json_file:
+        configs_dict = json.load(json_file)
+
+    return drum_tabber, configs_dict
+
+def song_to_tab(drum_tabber, configs_dict, song_file_w_extension, songs_to_tab_folder_path, write_to_txt = True):
+    '''
+    High-level function that takes a trained model and a new song, makes an inference on that song, and then writes the results to a filepath
+
+    Args:
+        drum_tabber [keras.Model]:
+        configs_dict [dict]:
+        song_file_w_extension [str]:
+        songs_to_tab_folder_path [str]:
+        write_to_txt [bool]: Default True. If true, will write to a .txt file.
+
+    Returns:
+        list: list of strings, a reconstructed machine-friendly tab that represents the song's drum tab from the model inference pass and post-processing.
+    '''
+
+    song_name = os.path.splitext(song_file_w_extension)[0]  # grabs the string of the song name only
+    song_file_ext = os.path.splitext(song_file_w_extension)[1][1:]  # grabs the string extension of the file
+
+    # uses librosa to output a np.ndarray of shape (n,) or (2,n) depending on the channels
+    # ASSUMES A song_to_tab_folder ---> song_name_folder ---> song_file_w_extension folder storage format
+    lb_song, sr_song = lb.core.load(os.path.join(songs_to_tab_folder_path, song_name, song_file_w_extension), sr=None, mono=True)
+
+    '''---CONVERT SONG INTO SPECTROGRAM (using configs_dict parameters)---'''
+    spectro = lb.feature.melspectrogram(np.asfortranarray(lb_song), sr=sr_song, n_fft = configs_dict['window_size'], hop_length = configs_dict['hop_size'], center = False, n_mels = configs_dict['n_mels'])
+    if configs_dict['shift_to_db']:
+        spectro = lb.power_to_db(spectro, ref = np.max)
+    if configs_dict['include_fo_differential']:
+        spectro_ftd = lb.feature.delta(data = spectro, width = 9, order=1, axis = -1)    # calculate the first time derivative of the spectrogram. Uses 9 frames to calculate
+            # spectro_f(irst)t(ime)d(erivative).shape = (n_mels, t) SAME AS spectro
+        spectro = np.concatenate([spectro, spectro_ftd], axis = 0)    # first time derivative attached at end of normal log mel spectrogram (n_mels of spectro, then n_mels of ftd)
+            # spectro.shape = (2* n_mels, t)
+    spectrogram = np.copy(spectro)   # 2D np.array
+
+    '''---TRANSFORM SPECTROGRAM INTO INPUT ARRAY---'''
+    n_features, n_windows = spectrogram.shape
+
+    # TODO: Finish the other model type options when they become available
+    if configs_dict['model_type'] == 'Context-CNN':
+
+        pre_context, post_context = configs_dict['n_context_pre'], configs_dict['n_context_post']
+        input_width = pre_context + 1 + post_context
+        min_value = np.min(spectrogram)
+
+        # assign into this np.array filled with the min values of the spectrogram (silence)
+        input_array = np.full(shape = (n_windows, n_features, input_width), fill_value = min_value)
+
+        for idx in range(n_windows):
+            if idx - pre_context < 0:    # in a window where you would slice before the beginning
+                start = pre_context-idx
+                input_array[idx, :, start:] = spectrogram[:, 0:idx+post_context+1]
+            elif idx + post_context+1 > n_windows: # in a window where you would slice past the end
+                end = post_context+1 - (n_windows - idx)
+                input_array[idx, :, :input_width-end] = spectrogram[:, idx-pre_context: n_windows ]
+            else:    # in a "normal" middle window where you slice into the spectrogram normally
+                input_array[idx, :,:] = spectrogram[:, idx-pre_context : idx+post_context+1]
+
+    else:
+        input_array = None
+        print('Other model types are not implemented yet!')
+
+    '''---MAKE INFERENCE WITH TRAINED MODEL AND INPUT ARRAY---'''
+    prediction = drum_tabber(input_array, training = False)
+
+    '''---SEND PREDICTIONS THROUGH PEAK PICKING FUNCTION---'''
+
+    '''---DECODE THE PREDICTIONS INTO A TAB---'''
+    class_names_dict = configs_dict['class_names_dict']     # class_names_dict has structure of {idx_in_prediction : 'class_label_name'}
+
+
+
+    return None
+
+
+# END OF MODEL SAVING, LOADING, AND INFERENCE FUNCTIONS

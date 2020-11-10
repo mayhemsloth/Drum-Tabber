@@ -104,7 +104,7 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
         training [bool]: Default False, pass True if the
 
     Returns:
-        keras.Model:
+        keras.Model: a Model that has the correct input and output layers
     '''
 
     # TODO: Handle the Context-CNN case where the Context == 0. Need to handle the Conv2D filters differently
@@ -112,9 +112,12 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
         #  'channels_last' ordering: will be using the shape of layers as (batch_size, n_features, n_context, channels = 1)
         input_layer = Input(shape = (n_features, N_CONTEXT_PRE + 1 + N_CONTEXT_POST, 1, ), dtype = 'float32')  # creates a None in first dimension for the batch size
 
+        # First BatchNormalization to standardize all data before putting it into the model.
+        output = BatchNormalization()(input_layer)
+
         # 2 x Block Conv2D-32-3x3-BN-ReLU
-        output = conv2D_block(input_layer, 32, (3,3), activation = activ)
         output = conv2D_block(output, 32, (3,3), activation = activ)
+        # output = conv2D_block(output, 32, (3,3), activation = activ)
 
         # DropOut
         output = Dropout(rate = 0.1)(output, training = training)
@@ -123,8 +126,8 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
         output = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(output)
 
         # 2 x Block Conv2D-64-3x3-BN-ReLU
-        output = conv2D_block(output, 64, (3,3), activation = activ)
-        output = conv2D_block(output, 64, (3,3), activation = activ)
+        # output = conv2D_block(output, 64, (3,3), activation = activ)
+        # output = conv2D_block(output, 64, (3,3), activation = activ)
 
         # DropOut
         output = Dropout(rate = 0.1)(output, training = training)

@@ -56,7 +56,7 @@ def main():
                                     cymbal_classes = CYMBAL_CLASSES)
         MusicAlignedTab.labels_summary(FullSet)   # prints a labels summary out to screen
         FullSet_encoded = one_hot_encode(FullSet)
-        configs_dict = create_configs_dict(FullSet_encoded, TRAIN_CONFIGS_SAVE_PATH)
+        configs_dict = create_configs_dict(FullSet_encoded)
         print('train.py main(): FullSet_encoded created!')
     else:
         FullSet_encoded = None
@@ -76,7 +76,7 @@ def main():
     drum_tabber = create_DrumTabber(n_features = configs_dict['num_features'],
                                     n_classes = configs_dict['num_classes'],
                                     activ = 'relu',
-                                    training = True)  # initial randomized weights of a tf/keras model
+                                    training = True)  # initial randomized weights of a keras model
     print('train.py main(): drum_tabber model created!')
     print(drum_tabber.summary())
 
@@ -88,7 +88,10 @@ def main():
 
     # load the optimizer, using Adam
     optimizer = tf.keras.optimizers.Adam()
-    optimizer.lr.assign( ( (global_steps / warmup_steps) * TRAIN_LR_INIT ).numpy())
+    if warmup_steps != 0:
+        optimizer.lr.assign( ( ( (global_steps+1) / warmup_steps) * TRAIN_LR_INIT ).numpy())
+    else:
+        optimizer.lr.assign( TRAIN_LR_INIT )
 
     # Model Input and Target massaging FUNCTIONS
     def spectro_to_input_array(spectrogram, model_type):
@@ -148,7 +151,6 @@ def main():
 
         return target_array
 
-
     def compute_loss(prediction, target_array, model_type):
         '''
         Computes the loss for the model type given
@@ -176,7 +178,7 @@ def main():
         return losses
 
     # Train and Validation Step FUNCTIONS
-    # TODO: Finish coding the train and validation step functions
+    # TODO: Combine these two functions into one and then send in a training/val flag for the differentials???
     def train_song_step(spectrogram, target):
         '''
         Updates the model from the information of one song.
@@ -326,7 +328,7 @@ def main():
         for spectrogram, target in train_set:   # outputs a full song's spectrogram and target, over the entire dataset
             # do a train step with the current spectrogram and target
             loss_results = train_song_step(spectrogram, target)
-            current_step = loss_results[0] % steps_per_epoch
+            current_step = (loss_results[0] % steps_per_epoch)-1
             print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch+1, current_step, steps_per_epoch, loss_results[1], loss_results[2]))
 
         total_val = 0
@@ -346,7 +348,6 @@ def main():
             drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
         if not TRAIN_SAVE_CHECKPOINT_ALL_BEST and not TRAIN_SAVE_CHECKPOINT_MAX_BEST:
             save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date'])
-            best_val_loss = total_val / n_val_songs
             drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
 
 
@@ -357,8 +358,6 @@ if __name__ == '__main__':
     main()
 
 '''
-    # start the main function definition
-    def main():
 
 
     # sets the gpus usage with the following code
@@ -371,15 +370,6 @@ if __name__ == '__main__':
     if os.path.exists(TRAIN_LOGDIR): shutil.rmtree(TRAIN_LOGDIR)
     writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
 
-    # Creates the two Dataset objects with
-        trainset = Dataset('train')
-        testset = Dataset('test')
-
-    # calculates a bunch of useful vars
-        steps_per_epoch = len(trainset)    # note that Dataset object is structured as a iterable whose length is equal to the num_batches
-        global_steps = tf.Variable(1, trainable=False, dtype=tf.int64)
-        warmup_steps = TRAIN_WARMUP_EPOCHS * steps_per_epoch
-        total_steps = TRAIN_EPOCHS * steps_per_epoch
 
 # Loads a model according to the conditionals provided. Uses custom functions to load weights into the different models constructed
     if TRAIN_FROM_CHECKPOINT:
@@ -392,8 +382,6 @@ if __name__ == '__main__':
         # output_tensors is a list of TF layers (either Conv2D, BatchNormalization [A CUSTOM VERSION] or a LeakyReLU)
         # Those layers were built up in different functions that built "blocks". Basically this is the Yolo implementation in TF
 
-    # Loads the optimizer
-        optimizer = tf.keras.optimizers.Adam()
 
     # defines a function called train_step
         def train_step(image_data, target):
@@ -508,13 +496,4 @@ if __name__ == '__main__':
         if not TRAIN_SAVE_BEST_ONLY and not TRAIN_SAVE_CHECKPOINT:
             yolo.save_weights(os.path.join(TRAIN_CHECKPOINTS_FOLDER, TRAIN_MODEL_NAME))
 
-
-
-'''
-
-
-
-'''
-: if __name__ == '__main__':   calls the function main if train.py is run?
-    main()
 '''
