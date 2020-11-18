@@ -9,16 +9,17 @@
 #================================================================
 
 # model options
-N_MELS      = 50        # number of mel bins to be created in the spectrograms
+N_MELS      = 100        # number of mel bins to be created in the spectrograms
 WINDOW_SIZE = 2048       # number of samples large that each spectro slice is. At 2048 and 44100 Hz sample rate, each window is 46 ms
 HOP_SIZE    = 441        # number of samples to hop each time when creating the spectrogram. 441 gives a 10ms hop size. That is, you produce a window every 10 ms
 SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatever it is in when you get the output from lb.melspectrogram
 INCLUDE_FO_DIFFERENTIAL = False  # keeps the first order differential over time of the spectrograms
-POSITIVE_WINDOW_FRACTION = 0.3   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
+POSITIVE_WINDOW_FRACTION = 0.1   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
 NEGATIVE_WINDOW_FRACTION = 0.1   # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
 MODEL_TYPE = 'Context-CNN' # the model type desired to build. Possible choices are 'Context-CNN'
 N_CONTEXT_PRE  = 13    # the number of context windows included before the target window in any context model type
 N_CONTEXT_POST = 13    # the number of context windows included after the target window in any context model type
+TOLERANCE_WINDOW = 25  # in ms, the amount of time that is allowable left and right of sample labelled as correct. Note that a 200 BPM 16th note grid corresponds to 75 ms duration. 150 BPM is 100 ms duration
 
 SAMPLE_RATE = 44100  # need to delete this whenever I finally implement the sr carryover from the song loading in
 
@@ -47,8 +48,8 @@ TRAIN_CHECKPOINT_MODEL_NAME    = ''
 TRAIN_BATCH_SIZE      = 256       # the number of individual images (slices of the spectrogram: windows and their contexts) before the model is updated
 TRAIN_LR_INIT         = 1e-4
 TRAIN_LR_END          = 1e-6
-TRAIN_WARMUP_EPOCHS   = 0
-TRAIN_EPOCHS          = 2
+TRAIN_WARMUP_EPOCHS   = 2
+TRAIN_EPOCHS          = 15
 
 
 # augmentation options

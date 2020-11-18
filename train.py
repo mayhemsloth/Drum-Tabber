@@ -7,10 +7,7 @@
 #   Description : Main python file to call to train an automatic drum tabber model
 #
 #================================================================
-'''
-: import all the dependency functions and modules here.
-: If you import the configs file you get access to all the variables in there and the functions can use it
-'''
+
 import os
 import shutil
 import random
@@ -22,6 +19,7 @@ import tensorflow as tf
 from src.configs import *
 from src.dataset import Dataset
 from src.utils import MusicAlignedTab, create_FullSet_df, clean_labels, collapse_class, one_hot_encode, create_configs_dict
+from src.utils import save_drum_tabber_model, detect_peaks
 from src.model import create_DrumTabber
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -65,6 +63,17 @@ def main():
     train_set = Dataset('train', FullSet_encoded)
     val_set = Dataset('val', FullSet_encoded)
 
+    # determine the weights of the different class labels to be put into the weighted_cross_entropy loss function
+    target_counts = np.zeros(shape=(configs_dict['num_classes']), dtype=np.float32)
+    total_windows = 0
+    for dset in [train_set, val_set]:
+        for _, target in dset:
+            n_class, n_window, n_channel = target.shape   # target.shape = (n_classes, n_windows, n_channels)
+            target_counts += np.sum(np.count_nonzero(target, axis=1), axis=1)   # sums all nonzero_counts across all windows and channels
+            total_windows += n_window*n_channel
+    target_freq = target_counts/total_windows    # the percentage of total counts for each class in each window
+    print('train.py main(): ', target_freq)
+
     # epochs/steps variables (note that a "step" is currently setup as one song)
     steps_per_epoch = len(train_set) # how many songs there are in the training set
     global_steps = tf.Variable(0, trainable=False, dtype=tf.int64)   # specifically used as args for later tf functions
@@ -78,7 +87,7 @@ def main():
                                     activ = 'relu',
                                     training = True)  # initial randomized weights of a keras model
     print('train.py main(): drum_tabber model created!')
-    print(drum_tabber.summary())
+    print('train.py main(): ', drum_tabber.summary())
 
     if TRAIN_FROM_CHECKPOINT and len(TRAIN_CHECKPOINT_MODEL_NAME) != 0:
         try:
@@ -151,7 +160,7 @@ def main():
 
         return target_array
 
-    def compute_loss(prediction, target_array, model_type):
+    def compute_loss(prediction, target_array, model_type, target_freq):
         '''
         Computes the loss for the model type given
 
@@ -159,17 +168,17 @@ def main():
             prediction [np.array]:
             target_array [np.array]:
             model_type [str]:
+            target_freq [np.array]:
 
         Returns:
             tf.Tensor: Tensor of the same shape as logits with component-wise losses calculated
         '''
 
         if model_type == 'Context-CNN':
-            losses = tf.nn.sigmoid_cross_entropy_with_logits(labels = target_array.astype(np.float32), logits = prediction)
-            '''
-            # perhaps use weighted_cross_entropy_with_logits to allow a tradeoff of recall and precision
-            by up- or down-weighting the cost of a positive error relative to a negative error
-            '''
+            # losses = tf.nn.sigmoid_cross_entropy_with_logits(labels = target_array.astype(np.float32), logits = prediction)
+            losses = tf.nn.weighted_cross_entropy_with_logits(labels = target_array.astype(np.float32),
+                                                              logits = prediction,
+                                                              pos_weight = 1/target_freq)
 
         # TODO: implement loss type for the RCNN type
         else:
@@ -228,10 +237,10 @@ def main():
                         Additionally, when I implement the Recurrent NN part, the order of the samples matter. This method
                         preserves relative time order between the different samples.
                         '''
-                        losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), MODEL_TYPE)
+                        losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), MODEL_TYPE, target_freq)
                     else:
                         prediction = drum_tabber(input_array[ start_batch_slice : end_batch_slice , ...], training = True)   # the forward pass though the current model, with training = True
-                        losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], MODEL_TYPE)
+                        losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], MODEL_TYPE, target_freq)
 
                     total_loss += tf.math.reduce_mean(losses)   # gets the average of all the classes
                     # apply gradients to update the model, the backward pass
@@ -302,10 +311,10 @@ def main():
                 with tf.GradientTape() as tape:
                     if end_batch_slice > num_examples:  # in the case where we are in the last batch, so we concat end of input_array/target_array with beginning samples of remaining length
                         prediction = drum_tabber(np.concatenate( (input_array[start_batch_slice:, :, :], input_array[ 0:end_batch_slice-num_examples , :, :]) , axis=0), training = False)
-                        losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), MODEL_TYPE)
+                        losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), MODEL_TYPE, target_freq)
                     else:
                         prediction = drum_tabber(input_array[ start_batch_slice : end_batch_slice , :, :], training = False)   # the forward pass though the current model, with training = True
-                        losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], MODEL_TYPE)
+                        losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], MODEL_TYPE, target_freq)
 
                 total_loss += tf.math.reduce_mean(losses)   # gets the average of all the classes
                 channel_loss += total_loss
@@ -328,7 +337,8 @@ def main():
         for spectrogram, target in train_set:   # outputs a full song's spectrogram and target, over the entire dataset
             # do a train step with the current spectrogram and target
             loss_results = train_song_step(spectrogram, target)
-            current_step = (loss_results[0] % steps_per_epoch)-1
+            current_step = (loss_results[0] % steps_per_epoch)
+            if current_step == 0 : current_step = steps_per_epoch  # fixes the modulo returning 0 issue for display
             print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch+1, current_step, steps_per_epoch, loss_results[1], loss_results[2]))
 
         total_val = 0
@@ -338,7 +348,6 @@ def main():
             total_val += results
         print('\n\nEpoch: {:2} val_loss:{:8.6f} \n\n'.format(epoch+1, total_val/n_val_songs))
 
-        # TODO: add model saving code based on configs
         if TRAIN_SAVE_CHECKPOINT_ALL_BEST:
             save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date']+"total_val_loss_{:8.6f}".format(total_val/n_val_songs))
             drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
@@ -350,150 +359,12 @@ def main():
             save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date'])
             drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
 
+    print('Congrats on making it through all training epochs!')
+    print('Saving the current drum_tabber model in memory and configs_dict to storage')
+    saved_model_name = '{}-E{}-VL{:.5f}'.format(configs_dict['model_type'], TRAIN_EPOCHS, best_val_loss).replace('.','_')
+    save_drum_tabber_model(drum_tabber = drum_tabber, model_name = saved_model_name, saved_models_path = SAVED_MODELS_PATH, configs_dict = configs_dict)
 
     return None
 
-
 if __name__ == '__main__':
     main()
-
-'''
-
-
-    # sets the gpus usage with the following code
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    if len(gpus) > 0:
-        try: tf.config.experimental.set_memory_growth(gpus[0], True)
-        except RuntimeError: pass
-
-   # Does some type of checking of the trian log directory with
-    if os.path.exists(TRAIN_LOGDIR): shutil.rmtree(TRAIN_LOGDIR)
-    writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
-
-
-# Loads a model according to the conditionals provided. Uses custom functions to load weights into the different models constructed
-    if TRAIN_FROM_CHECKPOINT:
-        blah blah blah
-    All use yolo = Create_Yolo3(training = True) option to create the model.
-    Note that Create_Yolo3 function returns the object from the call of tf.keras.Model(input_layer, output_tensors)
-    So yolo is a Keras.Model object, not any type of custom class extension!
-        # Input is a layer imported from tf.keras.layers
-        input_layer  = Input([input_size, input_size, channels])
-        # output_tensors is a list of TF layers (either Conv2D, BatchNormalization [A CUSTOM VERSION] or a LeakyReLU)
-        # Those layers were built up in different functions that built "blocks". Basically this is the Yolo implementation in TF
-
-
-    # defines a function called train_step
-        def train_step(image_data, target):
-            with tf.GradientTape() as tape:
-                # makes the prediction with the image_data given to the train step (most likely the batch of images concatenated)
-                # sets your running losses at 0
-                pred_result = yolo(image_data, training=True)
-                giou_loss=conf_loss=prob_loss=0
-
-                # COMPUTES LOSSES HERE using the compute_loss function and adds the running total together
-                grid = 3 if not TRAIN_YOLO_TINY else 2
-                for i in range(grid):
-                    conv, pred = pred_result[i*2], pred_result[i*2+1]
-                    loss_items = compute_loss(pred, conv, *target[i], i, CLASSES=TRAIN_CLASSES)
-                    giou_loss += loss_items[0]
-                    conf_loss += loss_items[1]
-                    prob_loss += loss_items[2]
-
-                total_loss = giou_loss + conf_loss + prob_loss
-
-                # IMPORTANT CODE HERE!!! APPLIES THE GRADIENTS via the tape.gradient and optimizer.apply_gradients functions
-                # Both of these are from TF and are not custom created .
-                gradients = tape.gradient(total_loss, yolo.trainable_variables)
-                optimizer.apply_gradients(zip(gradients, yolo.trainable_variables))
-
-                # update learning rate
-                # about warmup: https://arxiv.org/pdf/1812.01187.pdf&usg=ALkJrhglKOPDjNt6SHGbphTHyMcT0cuMJg
-                global_steps.assign_add(1)    # global_steps.assign_add(1) is how to increment a tf.Variable, which is what global_steps must be
-                if global_steps < warmup_steps:# and not TRAIN_TRANSFER:
-                    lr = global_steps / warmup_steps * TRAIN_LR_INIT
-                else:
-                # THIS IS THE COSINE LR. Note the tf.cos() function in there
-                    lr = TRAIN_LR_END + 0.5 * (TRAIN_LR_INIT - TRAIN_LR_END)*(
-                        (1 + tf.cos((global_steps - warmup_steps) / (total_steps - warmup_steps) * np.pi)))
-                optimizer.lr.assign(lr.numpy())
-
-                # writing summary data, I do't actually know what this does
-                with writer.as_default():
-                    tf.summary.scalar("lr", optimizer.lr, step=global_steps)
-                    tf.summary.scalar("loss/total_loss", total_loss, step=global_steps)
-                    tf.summary.scalar("loss/giou_loss", giou_loss, step=global_steps)
-                    tf.summary.scalar("loss/conf_loss", conf_loss, step=global_steps)
-                    tf.summary.scalar("loss/prob_loss", prob_loss, step=global_steps)
-                writer.flush()
-
-            return global_steps.numpy(), optimizer.lr.numpy(), giou_loss.numpy(), conf_loss.numpy(), prob_loss.numpy(), total_loss.numpy()
-
-    # create this validate_writer at this point for some reason???
-        validate_writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
-
-    # defines a function called validate_step
-            with tf.GradientTape() as tape:
-                # makes the prediction with the image_data given to it, but this time training=False in the prediction creation
-                pred_result = yolo(image_data, training=False)
-                giou_loss=conf_loss=prob_loss=0
-
-                # COMPUTE LOSSES HERE using the same code as before in the train_step
-                grid = 3 if not TRAIN_YOLO_TINY else 2
-                for i in range(grid):
-                    conv, pred = pred_result[i*2], pred_result[i*2+1]
-                    loss_items = compute_loss(pred, conv, *target[i], i, CLASSES=TRAIN_CLASSES)
-                    giou_loss += loss_items[0]
-                    conf_loss += loss_items[1]
-                    prob_loss += loss_items[2]
-
-                total_loss = giou_loss + conf_loss + prob_loss
-
-            # Note that we do nothing else to anything. The validation set is reserved only for calculating the losses on a non-training data set.
-
-        return giou_loss.numpy(), conf_loss.numpy(), prob_loss.numpy(), total_loss.numpy()
-
-# starts the epoch training loop
-    best_val_loss = 1000 # should be large at start
-    for epoch in range(TRAIN_EPOCHS):     #
-        # trainset, made from Dataset class, is an iterable that contains two items at each iter. The X and Y
-        for image_data, target in trainset:
-            results = train_step(image_data, target)
-            cur_step = results[0]%steps_per_epoch
-            print("epoch:{:2.0f} step:{:5.0f}/{}, lr:{:.6f}, giou_loss:{:7.2f}, conf_loss:{:7.2f}, prob_loss:{:7.2f}, total_loss:{:7.2f}"
-                  .format(epoch, cur_step, steps_per_epoch, results[1], results[2], results[3], results[4], results[5]))
-
-        if len(testset) == 0:
-            print("configure TEST options to validate model")
-            yolo.save_weights(os.path.join(TRAIN_CHECKPOINTS_FOLDER, TRAIN_MODEL_NAME))
-            continue
-
-        count, giou_val, conf_val, prob_val, total_val = 0., 0, 0, 0, 0
-        for image_data, target in testset:
-            results = validate_step(image_data, target)
-            count += 1
-            giou_val += results[0]
-            conf_val += results[1]
-            prob_val += results[2]
-            total_val += results[3]
-        # writing validate summary data
-        with validate_writer.as_default():
-            tf.summary.scalar("validate_loss/total_val", total_val/count, step=epoch)
-            tf.summary.scalar("validate_loss/giou_val", giou_val/count, step=epoch)
-            tf.summary.scalar("validate_loss/conf_val", conf_val/count, step=epoch)
-            tf.summary.scalar("validate_loss/prob_val", prob_val/count, step=epoch)
-        validate_writer.flush()
-
-        print("giou_val_loss:{:7.2f}, conf_val_loss:{:7.2f}, prob_val_loss:{:7.2f}, total_val_loss:{:7.2f}".
-              format(giou_val/count, conf_val/count, prob_val/count, total_val/count))
-
-# Saving the model based on the configs variable
-        if TRAIN_SAVE_CHECKPOINT and not TRAIN_SAVE_BEST_ONLY:
-            yolo.save_weights(os.path.join(TRAIN_CHECKPOINTS_FOLDER, TRAIN_MODEL_NAME+"_val_loss_{:7.2f}".format(total_val/count)))
-        if TRAIN_SAVE_BEST_ONLY and best_val_loss>total_val/count:
-            yolo.save_weights(os.path.join(TRAIN_CHECKPOINTS_FOLDER, TRAIN_MODEL_NAME))
-            best_val_loss = total_val/count
-        if not TRAIN_SAVE_BEST_ONLY and not TRAIN_SAVE_CHECKPOINT:
-            yolo.save_weights(os.path.join(TRAIN_CHECKPOINTS_FOLDER, TRAIN_MODEL_NAME))
-
-'''

@@ -53,7 +53,7 @@ class Dataset(object):
             if self.song_count < self.num_songs:   # if <, then in this iterable call we still have songs remaining in the Dataset
                 # do preprocessing here and return the spectrogram, targets of the song
                 song_title = self.song_list[self.song_count]
-                print(f'Dataset class __next__: preprocessing {song_title}')
+                #print(f'Dataset class __next__: preprocessing {song_title}')
                 with warnings.catch_warnings():    # used to ignore the Pydub warning that always comes up
                     warnings.simplefilter("ignore")
                     spectrogram, target = self.preprocess_song(song_title)
@@ -79,7 +79,7 @@ class Dataset(object):
         '''
         if self.FullSet_memory:               # if True, we have access to the FullSet subset
             song_df = self.subset_df.loc[song_title].copy()   # won't affect the underlying self.subset_df and gets rid of multi-indexing song title labels
-            song_df['sample start'] = song_df['sample start'].apply(lambda val: val-song_df.at[0, 'sample start']) # realigning the sample start number to beginning of the reconstructed slice
+            song_df['sample start'] = song_df['sample start'].apply(lambda valu: valu-song_df.at[0, 'sample start']) # realigning the sample start number to beginning of the reconstructed slice
             if self.data_aug:
                 song_df = self.shift_augmentation(song_df)  # implemented my own shift augmentation function because it was simpler to move the entire df labels and samples together
             song = np.vstack(song_df['song slice'].to_numpy()).T   # stacks the song slices back into a single numpy array of shape (channels, samples)
@@ -254,6 +254,7 @@ class Dataset(object):
     def create_spectrogram(self, channels, sr):
         '''
         Makes a spectrogram based on the song channels given and the model options from the configs.py file
+        Additionally, normalizes the spectrogram (and ftd) after creating it
 
         Args:
             channels [list]: list of np.arrays that are the samples
@@ -263,19 +264,22 @@ class Dataset(object):
             np.array: numpy array that is the spectrogram: either a n by m by 1 or n by m by 3 depending on the INCLUDE_LR_CHANNELS
         '''
 
-
         spectro_channels = [] # create either 1 spectrogram or 3 depending on how many channels are being used
         for channel in channels:
             spectro = lb.feature.melspectrogram(np.asfortranarray(channel), sr=sr, n_fft = WINDOW_SIZE, hop_length = HOP_SIZE, center = False, n_mels = N_MELS) # numpy array of shape (n_mels, t)
             # print(f'create_spectrogram: spectro.shape = {spectro.shape}')
             if SHIFT_TO_DB:
                 spectro = lb.power_to_db(spectro, ref = np.max)
+            # manual normalize of the current spectro channel
+            spectro_norm = (spectro - spectro.mean())/spectro.std()
             if INCLUDE_FO_DIFFERENTIAL:
                 spectro_ftd = lb.feature.delta(data = spectro, width = 9, order=1, axis = -1)    # calculate the first time derivative of the spectrogram. Uses 9 frames to calculate
                     # spectro_f(irst)t(ime)d(erivative).shape = (n_mels, t) SAME AS spectro
-                spectro = np.concatenate([spectro, spectro_ftd], axis = 0)    # first time derivative attached at end of normal log mel spectrogram (n_mels of spectro, then n_mels of ftd)
+                # manual normalize of current spectro_ftd
+                spectro_ftd_norm = (spectro_ftd - spectro_ftd.mean())/spectro_ftd.std()
+                spectro_norm = np.concatenate([spectro_norm, spectro_ftd_norm], axis = 0)    # first time derivative attached at end of normal log mel spectrogram (n_mels of spectro, then n_mels of ftd)
                     # spectro.shape = (2* n_mels, t)
-            spectro_channels.append(spectro)
+            spectro_channels.append(spectro_norm)
 
         spectrogram = np.stack(spectro_channels, axis = -1) # spectrogram channel dimension order is mono, L, R
         # print(f'create_spectrogram: spectrogram.shape after ftd = {spectrogram.shape}')
@@ -313,7 +317,8 @@ class Dataset(object):
             negative_window = int(window_start - NEGATIVE_WINDOW_FRACTION*WINDOW_SIZE)
             # TODO: fix this algorithmic approach so that it is more compatible with a larger WINDOW_SIZE while also being speedy
             if negative_window < sample_starts[tab_slice_idx] <= positive_window: # the drum event's sample_start falls within the acceptable range
-                targets[:, idx, :] = np.stack([labels_df.loc[tab_slice_idx].to_numpy() for _ in range(n_channels)], axis=-1)  # assumes all channels contain the same "drum data" for labeling purposes
+                targets[:, idx, :] = np.stack([labels_df.loc[tab_slice_idx].to_numpy() for _ in range(n_channels)], axis=-1)
+                ''' ASSUMES all channels contain the same "drum data" for labeling purposes '''
             if sample_starts[tab_slice_idx] < negative_window:   # if the sliding windows have passed the current tab slice
                 tab_slice_idx +=1
             if tab_slice_idx >= len(sample_starts):
