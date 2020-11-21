@@ -1018,13 +1018,13 @@ def collapse_class(FullSet_df, keep_dynamics = False, keep_bells = False, keep_t
 
 def create_configs_dict(df):
     '''
-    Creates a dictionary of the index to the class labels
+    Creates a dictionary  that contains a dictionary of the index to the class labels, among other important config choices/values
 
     Args:
         df [Dataframe]: encoded FullSet_df that would contain all the information of the class names
 
     Returns:
-        dict: the configs dictionary that is saved to a file if
+        dict: the configs dictionary that has a bunch of useful information in it concerning the current model's configs
     '''
 
     class_names = [x for x in list(df.columns) if '_' in x]
@@ -1039,6 +1039,7 @@ def create_configs_dict(df):
                     'n_mels'        : N_MELS,
                     'model_type'    : MODEL_TYPE,
                     'window_size'   : WINDOW_SIZE,
+                    'fmax'          : FMAX,
                     'hop_size'      : HOP_SIZE,
                     'shift_to_db'   : SHIFT_TO_DB,
                     'n_context_pre' : N_CONTEXT_PRE,
@@ -1046,6 +1047,7 @@ def create_configs_dict(df):
                     'include_fo_differential'  : INCLUDE_FO_DIFFERENTIAL,
                     'positive_window_fraction' : POSITIVE_WINDOW_FRACTION,
                     'negative_window_fraction' : NEGATIVE_WINDOW_FRACTION,
+                    'tolerance_window' : TOLERANCE_WINDOW,
                     'classification_dict' : {'clean_date' : CLEAN_DATA, 'keep_dynamics': KEEP_DYNAMICS, 'keep_bells': KEEP_BELLS,
                                              'keep_toms_seperate' : KEEP_TOMS_SEPARATE, 'hihat_classes' : HIHAT_CLASSES, 'cymbal_classes' : CYMBAL_CLASSES},
                     'month_date' : month_date
@@ -1055,7 +1057,6 @@ def create_configs_dict(df):
 # END OF MAT_df CREATION, CLEANING, ENCODING
 
 # START OF HUMAN-FACING UTILITY FUNCTIONS
-
 # END OF HUMAN-FACING UTILITY FUNCTIONS
 
 # START OF MODEL SAVING, LOADING, AND INFERENCE FUNCTIONS
@@ -1136,7 +1137,7 @@ def song_to_tab(drum_tabber, configs_dict, song_file_w_extension, songs_to_tab_f
     input = spectrogram_to_input(spectrogram, configs_dict)  # input.shape = (n_windows (examples), n_features, width_size)
 
     '''---MAKE INFERENCE WITH TRAINED MODEL AND INPUT ARRAY---'''
-    prediction = drum_tabber(np.expand_dims(input_array, axis=-1), training = False).numpy()   # expand dimension to make proper dimension, then change output from TF to numpy
+    prediction = drum_tabber(np.expand_dims(input, axis=-1), training = False).numpy()   # expand dimension to make proper dimension, then change output from TF to numpy
 
     '''---SEND PREDICTIONS THROUGH PEAK PICKING FUNCTION---'''
     detected_peaks = detect_peaks(prediction)

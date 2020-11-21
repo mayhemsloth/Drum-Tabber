@@ -67,7 +67,7 @@ def main():
     target_counts = np.zeros(shape=(configs_dict['num_classes']), dtype=np.float32)
     total_windows = 0
     for dset in [train_set, val_set]:
-        for _, target in dset:
+        for _, target, _2 in dset:
             n_class, n_window, n_channel = target.shape   # target.shape = (n_classes, n_windows, n_channels)
             target_counts += np.sum(np.count_nonzero(target, axis=1), axis=1)   # sums all nonzero_counts across all windows and channels
             total_windows += n_window*n_channel
@@ -160,12 +160,70 @@ def main():
 
         return target_array
 
+    def compute_error_metrics(peaks, label_ref_df, model_type, tolerance_window, hop_size, sr):
+        '''
+        Computes the various error metrics associated with the peaks against the original sample start assigned to each tab_df label example
+
+        NOTE on variable name consistency: in this function I refer to "spectrogram windows" as "frames" so as not to be confused with
+        "tolerance window" which refers to the amount of +- that a peak can be to satisfy a sample start label
+
+        Args:
+            peaks [np.array]: 0s and 1s array
+            label_ref_df [Dataframe]:
+            model_type [str]:
+            tolerance_window [int]:
+            hope_size [int]:
+            sr [int]:
+
+        Returns:
+            Dataframe: Dataframe of error metrics for the current song
+        '''
+
+        n_frames , n_classes = peaks.shape
+
+        # TODO: fix the label_ref_df so that it "wraps around" properly like the batches do
+
+        # create the error_df filled with 0s
+        class_names = [x for x in list(label_ref_df.columns) if '_' in x]  # same code used to find the class names in configs_dict so should be consistent
+        assert n_classes == len(class_names), 'For some reason the passed label_ref_df class is different than the number of classes in peaks'
+        error_metrics_names = ['P', 'N', 'TP', 'TN', 'FP', 'FN', 'EX']   # error metrics and order
+        error_df = pd.DataFrame(0, index = class_names, columns = error_metrics_names)  # Dataframe filled with 0s. Columns are error metrics. Rows are class names
+
+        frame_starts = np.array([hop_size*idx for idx in range(n_frames)]) # calculates the frame starts in sample num of the frames for peaks array
+        tol_window_sample = int((tolerance_window/1000.0) * sr) # converts tolerance_window (in unit of ms) to unit of sample number
+        sample_starts = label_ref_df['sample start'].to_numpy(copy=True)
+        num_rows_in_df = len(sample_starts)
+        labels = label_ref_df[class_names].to_numpy(copy=True)   # gets a (num_rows_in_df, n_class) numpy array of 0s and 1s corresponding to correct labels
+
+        # total positive and negative labels assignment into the error_df
+        error_df['P'] = np.sum(labels==1, axis=0)
+        error_df['N'] = np.sum(labels==0, axis=0)
+
+        # create a np boolean mask array of shape ( num_rows_in_df, n_frames  ). This determines which frames to check from peaks, for each row in label_ref_df
+        bool_mask = np.stack([ ((samp-tol_window_sample) <= frame_starts) & (frame_starts <= (samp+tol_window_sample)) for samp in sample_starts] , axis=0)
+
+        for row_idx in range(num_rows_in_df):  # looping over each sample start (row) example, one at a time
+            peaks_to_compare = peaks[bool_mask[row_idx,:],:]   # for this row example, here are the valid peaks with which to calculate error metrics
+            bool_peaks_in_frames = np.any(peaks_to_compare==1, axis=0)    # finds if there is a peak, per class (returns a shape=(n_class,) array)
+            row_labels = labels[row_idx,:]                               # getting this row's labels, containing all the classes
+            error_df['TP'] += np.logical_and(row_labels==1, bool_peaks_in_frames)
+            error_df['TN'] += np.logical_and(row_labels==0, np.logical_not(bool_peaks_in_frames))  # for all of these, take advantage of autocasting boolean
+            error_df['FP'] += np.logical_and(row_labels==0, bool_peaks_in_frames)     # to int (false=0, true=1) when doing an operation
+            error_df['FN'] += np.logical_and(row_labels==1, np.logical_not(bool_peaks_in_frames))
+
+        # calculate the number of extraneous peaks that were unaccounted for in the peaks array
+        # these peaks are located OUTSIDE of the tolerance window of ANY sample start num, and thus were never counted in TP or FN
+        total_peaks_per_class = np.sum(peaks, axis=0)
+        error_df['EX'] = total_peaks_per_class - error_df['P'].to_numpy(copy=True)
+
+        return error_df
+
     def compute_loss(prediction, target_array, model_type, target_freq):
         '''
         Computes the loss for the model type given
 
         Args:
-            prediction [np.array]:
+            prediction [tf.Tensor]:
             target_array [np.array]:
             model_type [str]:
             target_freq [np.array]:
@@ -187,46 +245,59 @@ def main():
         return losses
 
     # Train and Validation Step FUNCTIONS
-    # TODO: Combine these two functions into one and then send in a training/val flag for the differentials???
-    def train_song_step(spectrogram, target):
+    def song_step(spectrogram, target, label_ref_df, set_type):
         '''
-        Updates the model from the information of one song.
-        Note that multiple model update steps can (and will) occur in one call of train_song_step
+        Controls both training and validation step in model training
+
+        If training: updates the model from information of one song.
+        Note that multiple model update steps can (and will) occur in one call of song_step
+
+        If validation: skips the model updating part of the function
 
         Args:
             spectrogram [np.array]: for this song, the spectrogram array of shape (n_features, n_windows, n_channels)
             target [np.array]: for this song, the one-hot target array of shape (n_classes, n_windows, n_channels)
+            label_ref_df [Dataframe]: for this song, a dataframe containing the labels and the 'sample start' column used to find accuracy
+            set_type [str]: either 'train' or 'val' to determine which type of song_step to do
 
         Returns:
-            variables about the training step (to be displayed)
+            float: the global training step that we are currently on
+            float: the learning rate after being updated by this training step
+            float: the
+            DataFrame: the error dataframe that contains the tabulated True/False Positive/Negatives by class for this song
         '''
 
         # full spectrogram shape dimensions
         n, m, n_channels = spectrogram.shape
 
-        song_loss = 0
+        song_loss = 0.0
+
+        error_df_list = []
 
         # treat each channel individually as a single "song"
         for channel in range(n_channels):
 
             # converts the current spectrogram into the correct input array
-            input_array = np.expand_dims(spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE), axis=-1) # adding a channel dim at the end so that it is 4D for the model input
+            input_array = np.expand_dims(spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE), axis=-1) # adding a "channel" dim at the end so that it is 4D for the model input
             target_array = target_to_target_array(target[:,:,channel], MODEL_TYPE)
             num_examples = input_array.shape[0]    # total number of examples in this song/channel
 
             # the number of model updates, based on the batch size and number of inputs
             num_updates = int(np.ceil(num_examples/TRAIN_BATCH_SIZE))
-            channel_loss = 0
+            channel_loss = 0.0
 
+            # making an empty array to concatenate later for building up the error metrics array after converting to peaks
+            prediction_list = []
+
+            # go through batches and update model
             for idx in range(num_updates):
-                total_loss = 0
+                total_loss = 0.0
                 start_batch_slice = idx*TRAIN_BATCH_SIZE
                 end_batch_slice = (idx+1)*TRAIN_BATCH_SIZE
 
                 # start recording the functions that are applied to autodifferentiate later
                 with tf.GradientTape() as tape:
                     if end_batch_slice > num_examples:  # in the case where we are in the last batch, so we concat end of input_array/target_array with beginning samples of remaining length
-                        prediction = drum_tabber(np.concatenate( (input_array[start_batch_slice:, ...], input_array[ 0:end_batch_slice-num_examples , ...]) , axis=0), training = True)
                         '''
                         NOTE ON THE RAMIFICATIONS OF THIS DECISION ON HOW TO SUPPLY ADDITIONAL SAMPLES FOR CORRECT BATCH SIZE:
                         To correct the batch size for the end samples, I chose to append the start of the song samples onto the end to correct the batch number size
@@ -237,28 +308,39 @@ def main():
                         Additionally, when I implement the Recurrent NN part, the order of the samples matter. This method
                         preserves relative time order between the different samples.
                         '''
+                        prediction = drum_tabber(np.concatenate( (input_array[start_batch_slice:, ...], input_array[ 0:end_batch_slice-num_examples , ...]) , axis=0), training = True)
                         losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), MODEL_TYPE, target_freq)
                     else:
                         prediction = drum_tabber(input_array[ start_batch_slice : end_batch_slice , ...], training = True)   # the forward pass though the current model, with training = True
                         losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], MODEL_TYPE, target_freq)
 
+
                     total_loss += tf.math.reduce_mean(losses)   # gets the average of all the classes
-                    # apply gradients to update the model, the backward pass
-                    gradients = tape.gradient(total_loss, drum_tabber.trainable_variables)
-                    optimizer.apply_gradients(zip(gradients, drum_tabber.trainable_variables))
+                    if set_type == 'train':   # if we are in a train set, update the model
+                        # apply gradients to update the model, the backward pass
+                        gradients = tape.gradient(total_loss, drum_tabber.trainable_variables)
+                        optimizer.apply_gradients(zip(gradients, drum_tabber.trainable_variables))
+
+                prediction_list.append(prediction.numpy())
                 channel_loss += total_loss
+
+            full_chan_peaks = detect_peaks(np.concatenate(prediction_list, axis=0)) # concat the list of prediction arrays, and then feed it into detect_peaks function
+
+            chan_error_df = compute_error_metrics(full_chan_peaks, label_ref_df, MODEL_TYPE, TOLERANCE_WINDOW, HOP_SIZE, SAMPLE_RATE)
+            error_df_list.append(chan_error_df)
 
             channel_loss = channel_loss / num_updates
             song_loss += channel_loss
 
-        # after the full song is done, update learning rate, using warmup and cosine decay
-        global_steps.assign_add(1)
-        if global_steps < warmup_steps:
-            lr = (global_steps / warmup_steps) * TRAIN_LR_INIT   # linearly increase lr until out of warmup steps
-        else: # out of warmup epochs, so we use cosine decay for learning rate
-            lr = TRAIN_LR_END + 0.5 * (TRAIN_LR_INIT - TRAIN_LR_END)*(
-                (1 + tf.cos( ( (global_steps - warmup_steps) / (total_steps - warmup_steps) ) * np.pi)))
-        optimizer.lr.assign(lr.numpy())
+        if set_type == 'train':
+            # after the full song+channels is done, update learning rate, using warmup and cosine decay
+            global_steps.assign_add(1)
+            if global_steps < warmup_steps:
+                lr = (global_steps / warmup_steps) * TRAIN_LR_INIT   # linearly increase lr until out of warmup steps
+            else: # out of warmup epochs, so we use cosine decay for learning rate
+                lr = TRAIN_LR_END + 0.5 * (TRAIN_LR_INIT - TRAIN_LR_END)*(
+                    (1 + tf.cos( ( (global_steps - warmup_steps) / (total_steps - warmup_steps) ) * np.pi)))
+            optimizer.lr.assign(lr.numpy())
 
         # write summary data
         # TODO: understand what the writer TF is doing
@@ -269,64 +351,11 @@ def main():
         writer.flush()
         '''
 
+        error_df = sum(error_df_list).copy() # the sum calls the + operator, which is overloaded for DataFrames to add element-wise values!
         song_loss = song_loss/n_channels
 
-        return global_steps.numpy(), optimizer.lr.numpy(), song_loss.numpy()
+        return global_steps.numpy(), optimizer.lr.numpy(), song_loss.numpy(), error_df
 
-    def validation_song_step(spectrogram, target):
-        '''
-        Calculates losses for one song in the validation set to see if the model got better during this training epoch
-
-        Args:
-            spectrogram [np.array]: for this song, the spectrogram array of shape (n_features, n_windows, n_channels)
-            target [np.array]: for this song, the one-hot target array of shape (n_classes, n_windows, n_channels)
-
-        Returns:
-            variables about the training step (to be displayed)
-        '''
-
-        # full spectrogram shape dimensions
-        n, m, n_channels = spectrogram.shape
-
-        song_loss = 0
-
-        # treat each channel individually as a single "song"
-        for channel in range(n_channels):
-
-            # converts the current spectrogram into the correct input array
-            input_array = np.expand_dims(spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE), axis=-1)
-            target_array = target_to_target_array(target[:,:,channel], MODEL_TYPE)
-            num_examples = input_array.shape[0]
-
-            # the number of model updates, based on the batch size and number of inputs
-            num_updates = int(np.ceil(num_examples/VAL_BATCH_SIZE))
-            channel_loss = 0
-
-            for idx in range(num_updates):
-                total_loss = 0
-                start_batch_slice = idx*VAL_BATCH_SIZE
-                end_batch_slice = (idx+1)*VAL_BATCH_SIZE
-
-                # start recording the functions that are applied to autodifferentiate
-                with tf.GradientTape() as tape:
-                    if end_batch_slice > num_examples:  # in the case where we are in the last batch, so we concat end of input_array/target_array with beginning samples of remaining length
-                        prediction = drum_tabber(np.concatenate( (input_array[start_batch_slice:, :, :], input_array[ 0:end_batch_slice-num_examples , :, :]) , axis=0), training = False)
-                        losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), MODEL_TYPE, target_freq)
-                    else:
-                        prediction = drum_tabber(input_array[ start_batch_slice : end_batch_slice , :, :], training = False)   # the forward pass though the current model, with training = True
-                        losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], MODEL_TYPE, target_freq)
-
-                total_loss += tf.math.reduce_mean(losses)   # gets the average of all the classes
-                channel_loss += total_loss
-
-            # after each channel, print the total channel mean loss
-            # print(f'Channel {channel} loss: {channel_loss/num_updates}')
-            channel_loss = channel_loss / num_updates
-            song_loss += channel_loss
-
-        song_loss = song_loss / n_channels
-
-        return song_loss.numpy()
 
     best_val_loss = 1000.0    # start with a high validation loss
     n_val_songs = len(val_set)
@@ -334,19 +363,34 @@ def main():
     # loop over the number of epochs
     for epoch in range(TRAIN_EPOCHS):
         print(f'Starting Epoch {epoch+1}/{TRAIN_EPOCHS}')
-        for spectrogram, target in train_set:   # outputs a full song's spectrogram and target, over the entire dataset
+        for spectrogram, target, label_ref_df in train_set:   # outputs a full song's spectrogram and target and label reference df, over the entire dataset
             # do a train step with the current spectrogram and target
-            loss_results = train_song_step(spectrogram, target)
-            current_step = (loss_results[0] % steps_per_epoch)
-            if current_step == 0 : current_step = steps_per_epoch  # fixes the modulo returning 0 issue for display
-            print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch+1, current_step, steps_per_epoch, loss_results[1], loss_results[2]))
+            glob_steps, current_lr, song_loss, error = song_step(spectrogram, target, label_ref_df, train_set.set_type)
+            # loss_results is global_steps.numpy(), optimizer.lr.numpy(), song_loss.numpy(), error_df
+            current_step = (glob_steps % steps_per_epoch) if (glob_steps % steps_per_epoch) != 0 else steps_per_epoch # fixes the modulo returning 0 issue for display
+            print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch+1, current_step, steps_per_epoch, current_lr, song_loss))
+            # additional error metrics for the entire validation set (not normalized by the number of validation songs)
+            acc = (error['TP'] + error['TN']) /  (error['TP'] + error['TN'] + error['FP'] + error['FN'])
+            f1 = (2*error['TP']) / (2*error['TP'] + error['FP'] + error['FN'])
+            print('Error_df: \n{}'.format(error))
+            print('Accuracy: \n{}'.format(acc))
+            print('F1 Score: \n{}'.format(f1))
 
-        total_val = 0
-        for spectrogram, target in val_set:
+        total_val = 0.0
+        val_error_list = []   # combining all the validation songs into one big error_metrics_df later
+        for spectrogram, target, label_ref_df in val_set:
             # do a validation step with the current spectrogram and target
-            results = validation_song_step(spectrogram, target)
-            total_val += results
+            _, _2, song_loss, error_ = song_step(spectrogram, target, label_ref_df, val_set.set_type)
+            total_val += song_loss
+            val_error_list.append(error_)
         print('\n\nEpoch: {:2} val_loss:{:8.6f} \n\n'.format(epoch+1, total_val/n_val_songs))
+        # additional error metrics for the entire validation set (not normalized by the number of validation songs)
+        val_error = sum(val_error_list)
+        val_acc = (val_error['TP'] + val_error['TN']) /  (val_error['TP'] + val_error['TN'] + val_error['FP'] + val_error['FN'])
+        val_f1 = (2*val_error['TP']) / (2*val_error['TP'] + val_error['FP'] + val_error['FN'])
+        print('Val Error_df: \n{}'.format(val_error))
+        print('Val Accuracy: \n{}'.format(val_acc))
+        print('Val F1 Score: \n{}'.format(val_f1))
 
         if TRAIN_SAVE_CHECKPOINT_ALL_BEST:
             save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date']+"total_val_loss_{:8.6f}".format(total_val/n_val_songs))

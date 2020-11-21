@@ -33,6 +33,7 @@ class Dataset(object):
         self.FullSet_memory = True if (FullSet_df is not None) and TRAIN_FULLSET_MEMORY else False
         self.subset_df = FullSet_df.loc[self.song_list].copy() if self.FullSet_memory else None   # makes a copy of the subset of the FullSet, still with the multi-index labels of the songs
         self.aug_comp = Dataset.create_composition() if self.data_aug else None
+        self.set_type = dataset_type
 
         self.classes = [x for x in list(self.subset_df.columns) if '_' in x]  if self.subset_df is not None else None  # assumes that the labels in the df are appropriately named ('_' only being introduced at encoded phase)
         self.num_classes = len(self.classes)
@@ -56,10 +57,10 @@ class Dataset(object):
                 #print(f'Dataset class __next__: preprocessing {song_title}')
                 with warnings.catch_warnings():    # used to ignore the Pydub warning that always comes up
                     warnings.simplefilter("ignore")
-                    spectrogram, target = self.preprocess_song(song_title)
+                    spectrogram, target, label_ref_df = self.preprocess_song(song_title)
 
                 self.song_count += 1
-                return spectrogram, target
+                return spectrogram, target, label_ref_df
 
             else:   # we went through all the songs in the Dataset, so let's reset the object to it's default state and randomize
                 self.song_count = 0
@@ -79,7 +80,7 @@ class Dataset(object):
         '''
         if self.FullSet_memory:               # if True, we have access to the FullSet subset
             song_df = self.subset_df.loc[song_title].copy()   # won't affect the underlying self.subset_df and gets rid of multi-indexing song title labels
-            song_df['sample start'] = song_df['sample start'].apply(lambda valu: valu-song_df.at[0, 'sample start']) # realigning the sample start number to beginning of the reconstructed slice
+            song_df['sample start'] = song_df['sample start'].apply(lambda valu: valu-song_df.at[0, 'sample start']) # realigning the sample start number to beginning of the reconstructed slice (instead of beginning of the actual song)
             if self.data_aug:
                 song_df = self.shift_augmentation(song_df)  # implemented my own shift augmentation function because it was simpler to move the entire df labels and samples together
             song = np.vstack(song_df['song slice'].to_numpy()).T   # stacks the song slices back into a single numpy array of shape (channels, samples)
@@ -105,13 +106,15 @@ class Dataset(object):
             # make the targets using information of the spectrogram and the song_df
             target = self.create_target(spectrogram, song_df)
 
+            # make a label reference df to help with error metric calculations
+            label_ref_df = self.create_label_ref(song_df)
 
         # TODO: Implement the case where the FullSet_memory == False and we need to load the songs individually everytime
         else:     # case of not keeping FullSet in memory
             print('FULLSET_MEMORY == FALSE NOT IMPLEMENTED YET. EVERYTHING ELSE WILL NOT FUNCTION PROPERLY')
-            spectrogram, target = None, None
+            spectrogram, target, label_ref_df = None, None
 
-        return spectrogram, target
+        return spectrogram, target, label_ref_df
 
     # START Helper Functions
     def get_song_list(self, dataset_type):
@@ -157,7 +160,6 @@ class Dataset(object):
         aug_comp = adm.Compose(transforms = transform, shuffle = False, p = 1.0)
 
         return aug_comp
-
     # END Helper Functions
 
     # START Augmentation Functions
@@ -248,7 +250,6 @@ class Dataset(object):
         spectrogram = S_noise(spectrogram.copy(), S_NOISE_CHANCE)
 
         return spectrogram
-
     # END Augmentation Functions
 
     def create_spectrogram(self, channels, sr):
@@ -266,7 +267,7 @@ class Dataset(object):
 
         spectro_channels = [] # create either 1 spectrogram or 3 depending on how many channels are being used
         for channel in channels:
-            spectro = lb.feature.melspectrogram(np.asfortranarray(channel), sr=sr, n_fft = WINDOW_SIZE, hop_length = HOP_SIZE, center = False, n_mels = N_MELS) # numpy array of shape (n_mels, t)
+            spectro = lb.feature.melspectrogram(np.asfortranarray(channel), sr=sr, n_fft = WINDOW_SIZE, hop_length = HOP_SIZE, center = False, n_mels = N_MELS, fmax=FMAX) # numpy array of shape (n_mels, t)
             # print(f'create_spectrogram: spectro.shape = {spectro.shape}')
             if SHIFT_TO_DB:
                 spectro = lb.power_to_db(spectro, ref = np.max)
@@ -290,6 +291,8 @@ class Dataset(object):
         '''
         Creates the target labels from the tab dataframe that contains the one-hot encoded labels and aligns them to the spectrogram columns
         The model will have a 1:1 labeling format: for every frame ( or window) that goes in, a prediction on labels comes out.
+        NOTE that this code assumes each channel contains the same "drum onset data" for labeling purposes. That is, no data augmentation
+        function that changes the channels individually should affect the labels.
 
         Args:
             spectrogram [np.array]: a spectrogram object that represents the X that will go into the model (n_mels, t, n_channels)
@@ -325,3 +328,18 @@ class Dataset(object):
                 break
 
         return targets
+
+    def create_label_ref(self, song_df):
+        '''
+        Creates the label reference dataframe for the current song. Used to track true/false positive/negatives
+
+        Args:
+            song_df [Dataframe]: tab df that contains all the one-hot-encoded columns along with 'song slice' column and a 'sample start' column that contains the sample number start of that row w.r.t. the audio in the spectrogram
+
+        Returns:
+            Dataframe: label_ref_df that contains the new column of 'sample start ms' which is the ms number where that df row starts
+        '''
+
+        label_ref_df = song_df.drop(columns = ['song slice'], errors = 'ignore').copy()   # get a dataframe that only has the labels and sample starts
+
+        return label_ref_df
