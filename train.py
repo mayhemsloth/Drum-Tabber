@@ -160,6 +160,7 @@ def main():
 
         return target_array
 
+    # loss and error metric computation FUNCTIONS
     def compute_error_metrics(peaks, label_ref_df, model_type, tolerance_window, hop_size, sr):
         '''
         Computes the various error metrics associated with the peaks against the original sample start assigned to each tab_df label example
@@ -168,7 +169,7 @@ def main():
         "tolerance window" which refers to the amount of +- that a peak can be to satisfy a sample start label
 
         Args:
-            peaks [np.array]: 0s and 1s array
+            peaks [np.array]: 0s and 1s array of shape (n_frames, n_classes) that has a detected peak where there is a 1 and not a peak at 0s
             label_ref_df [Dataframe]:
             model_type [str]:
             tolerance_window [int]:
@@ -214,7 +215,7 @@ def main():
         # calculate the number of extraneous peaks that were unaccounted for in the peaks array
         # these peaks are located OUTSIDE of the tolerance window of ANY sample start num, and thus were never counted in TP or FN
         total_peaks_per_class = np.sum(peaks, axis=0)
-        error_df['EX'] = total_peaks_per_class - error_df['P'].to_numpy(copy=True)
+        error_df['EX'] = total_peaks_per_class.astype(int) - error_df['P'].to_numpy(copy=True)
 
         return error_df
 
@@ -244,7 +245,7 @@ def main():
 
         return losses
 
-    # Train and Validation Step FUNCTIONS
+    # Train and Validation Step FUNCTION
     def song_step(spectrogram, target, label_ref_df, set_type):
         '''
         Controls both training and validation step in model training
@@ -270,8 +271,10 @@ def main():
         # full spectrogram shape dimensions
         n, m, n_channels = spectrogram.shape
 
-        song_loss = 0.0
+        if set_type == 'train': batch_size = TRAIN_BATCH_SIZE   # set correct batch size here for rest of function
+        elif set_type =='val': batch_size = VAL_BATCH_SIZE
 
+        song_loss = 0.0
         error_df_list = []
 
         # treat each channel individually as a single "song"
@@ -283,8 +286,9 @@ def main():
             num_examples = input_array.shape[0]    # total number of examples in this song/channel
 
             # the number of model updates, based on the batch size and number of inputs
-            num_updates = int(np.ceil(num_examples/TRAIN_BATCH_SIZE))
+            num_updates = int(np.ceil(num_examples/batch_size))
             channel_loss = 0.0
+            max_samples = int(num_updates*batch_size*HOP_SIZE)
 
             # making an empty array to concatenate later for building up the error metrics array after converting to peaks
             prediction_list = []
@@ -292,8 +296,8 @@ def main():
             # go through batches and update model
             for idx in range(num_updates):
                 total_loss = 0.0
-                start_batch_slice = idx*TRAIN_BATCH_SIZE
-                end_batch_slice = (idx+1)*TRAIN_BATCH_SIZE
+                start_batch_slice = idx*batch_size
+                end_batch_slice = (idx+1)*batch_size
 
                 # start recording the functions that are applied to autodifferentiate later
                 with tf.GradientTape() as tape:
@@ -366,15 +370,15 @@ def main():
         for spectrogram, target, label_ref_df in train_set:   # outputs a full song's spectrogram and target and label reference df, over the entire dataset
             # do a train step with the current spectrogram and target
             glob_steps, current_lr, song_loss, error = song_step(spectrogram, target, label_ref_df, train_set.set_type)
-            # loss_results is global_steps.numpy(), optimizer.lr.numpy(), song_loss.numpy(), error_df
             current_step = (glob_steps % steps_per_epoch) if (glob_steps % steps_per_epoch) != 0 else steps_per_epoch # fixes the modulo returning 0 issue for display
             print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch+1, current_step, steps_per_epoch, current_lr, song_loss))
-            # additional error metrics for the entire validation set (not normalized by the number of validation songs)
-            acc = (error['TP'] + error['TN']) /  (error['TP'] + error['TN'] + error['FP'] + error['FN'])
-            f1 = (2*error['TP']) / (2*error['TP'] + error['FP'] + error['FN'])
-            print('Error_df: \n{}'.format(error))
-            print('Accuracy: \n{}'.format(acc))
-            print('F1 Score: \n{}'.format(f1))
+            # additional error metrics for the training song
+            if (glob_steps % 100) == 0:
+                acc = (error['TP'] + error['TN']) /  (error['TP'] + error['TN'] + error['FP'] + error['FN'])
+                f1 = (2*error['TP']) / (2*error['TP'] + error['FP'] + error['FN'])
+                print('Error_df: \n{}'.format(error))
+                print('Accuracy: \n{}'.format(acc))
+                print('F1 Score: \n{}'.format(f1))
 
         total_val = 0.0
         val_error_list = []   # combining all the validation songs into one big error_metrics_df later
@@ -385,13 +389,15 @@ def main():
             val_error_list.append(error_)
         print('\n\nEpoch: {:2} val_loss:{:8.6f} \n\n'.format(epoch+1, total_val/n_val_songs))
         # additional error metrics for the entire validation set (not normalized by the number of validation songs)
-        val_error = sum(val_error_list)
-        val_acc = (val_error['TP'] + val_error['TN']) /  (val_error['TP'] + val_error['TN'] + val_error['FP'] + val_error['FN'])
-        val_f1 = (2*val_error['TP']) / (2*val_error['TP'] + val_error['FP'] + val_error['FN'])
-        print('Val Error_df: \n{}'.format(val_error))
-        print('Val Accuracy: \n{}'.format(val_acc))
-        print('Val F1 Score: \n{}'.format(val_f1))
+        if ((epoch % 5) == 0) or (epoch+1 == TRAIN_EPOCHS):
+            val_error = sum(val_error_list)
+            val_acc = (val_error['TP'] + val_error['TN']) /  (val_error['TP'] + val_error['TN'] + val_error['FP'] + val_error['FN'])
+            val_f1 = (2*val_error['TP']) / (2*val_error['TP'] + val_error['FP'] + val_error['FN'])
+            print('Val Error_df: \n{}'.format(val_error))
+            print('Val Accuracy: \n{}'.format(val_acc))
+            print('Val F1 Score: \n{}'.format(val_f1))
 
+        # execute the saving model checkpoint options depending on configs
         if TRAIN_SAVE_CHECKPOINT_ALL_BEST:
             save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date']+"total_val_loss_{:8.6f}".format(total_val/n_val_songs))
             drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
@@ -403,7 +409,7 @@ def main():
             save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date'])
             drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
 
-    print('Congrats on making it through all training epochs!')
+    print(f'Congrats on making it through all {TRAIN_EPOCHS} training epochs!\n')
     print('Saving the current drum_tabber model in memory and configs_dict to storage')
     saved_model_name = '{}-E{}-VL{:.5f}'.format(configs_dict['model_type'], TRAIN_EPOCHS, best_val_loss).replace('.','_')
     save_drum_tabber_model(drum_tabber = drum_tabber, model_name = saved_model_name, saved_models_path = SAVED_MODELS_PATH, configs_dict = configs_dict)
