@@ -10,6 +10,7 @@
 
 import os
 import json
+import warnings
 import numpy as np
 import pandas as pd
 import librosa as lb
@@ -79,7 +80,7 @@ class MusicAlignedTab(object):
                 tab_conversion_dict[tab_char_labels[key]] = master_format_dict[key]
 
         # read in the tab .txt file
-        with open(self.filepaths['tab'], 'r') as tab_file:
+        with open(self.filepaths['tab'], 'r', encoding='utf-8') as tab_file:
             tab_to_convert = tab_file.readlines()  # returns a python array of the text file with each line as a string, including the \n new line character at the end of each string
 
         # build this array tab up and return it
@@ -285,7 +286,9 @@ class MusicAlignedTab(object):
         elif song_info["channels"] == "stereo":     # if the song is stereo, do nothing
             channel_mono = False
 
-        lb_song, sr_song = lb.core.load(song_title, sr=None, mono=channel_mono) # uses librosa to output a np.ndarray of shape (n,) or (2,n) depending on the channels
+        with warnings.catch_warnings():    # used to ignore the Pydub warning that always comes up
+            warnings.simplefilter("ignore")
+            lb_song, sr_song = lb.core.load(song_title, sr=None, mono=channel_mono) # uses librosa to output a np.ndarray of shape (n,) or (2,n) depending on the channels
 
         song_info['sr'] = sr_song  # add the sample rate, as loaded from librosa, into the song_info dict
 

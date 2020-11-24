@@ -1,1 +1,4 @@
 numba==0.48
+pydub>=0.20
+audiomentations
+librosa>=0.7

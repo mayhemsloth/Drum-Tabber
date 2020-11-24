@@ -9,7 +9,7 @@
 #================================================================
 
 # model options
-N_MELS      = 100        # number of mel bins to be created in the spectrograms
+N_MELS      = 150        # number of mel bins to be created in the spectrograms
 WINDOW_SIZE = 4096      # number of samples large that each spectro slice is. At 2048 and 44100 Hz sample rate, each window is 46 ms
 HOP_SIZE    = 441        # number of samples to hop each time when creating the spectrogram. 441 gives a 10ms hop size. That is, you produce a window every 10 ms
 FMAX        = 10000      # in Hz, the maximum frequency that the mel spectrogram outputs; if None, function uses sr / 2.0
@@ -18,10 +18,9 @@ INCLUDE_FO_DIFFERENTIAL = False  # keeps the first order differential over time 
 POSITIVE_WINDOW_FRACTION = 0.2   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
 NEGATIVE_WINDOW_FRACTION = 0.1   # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
 MODEL_TYPE = 'Context-CNN' # the model type desired to build. Possible choices are 'Context-CNN'
-N_CONTEXT_PRE  = 13    # the number of context windows included before the target window in any context model type
-N_CONTEXT_POST = 13    # the number of context windows included after the target window in any context model type
-TOLERANCE_WINDOW = 30  # in ms, the amount of time that is allowable left and right of sample labelled as correct. Note that a 200 BPM 16th note grid corresponds to 75 ms duration. 150 BPM is 100 ms duration
-
+N_CONTEXT_PRE  = 15    # the number of context windows included before the target window in any context model type
+N_CONTEXT_POST = 15    # the number of context windows included after the target window in any context model type
+TOLERANCE_WINDOW = 25  # in ms, the amount of time that is allowable left and right of sample labelled as correct. Note that a 200 BPM 16th note grid corresponds to 75 ms duration. 150 BPM is 100 ms duration
 
 SAMPLE_RATE = 44100  # need to delete this whenever I finally implement the sr carryover from the song loading in
 
@@ -34,9 +33,9 @@ HIHAT_CLASSES      = 1        # 1 is only closed HH ('x'), others moved to crash
 CYMBAL_CLASSES     = 1        # 1 is all cymbals, including ride, to one class 'ac'. 2 is all crash cymbals to one class 'mc', and ride gets split out. -1 is no cymbals get affected, for debugging
 
 # train options
-SONGS_PATH = 'C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs'    # the absolute filepath to the folder containing all the songs data structured in the correct way with song subfolders
+SONGS_PATH = '/content/gdrive/My Drive/Drum-Tabber-Support-Data/Songs'    # the absolute filepath to the folder containing all the songs data structured in the correct way with song subfolders
 SONGS_TO_TAB_PATH = 'C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs-to-Tabs'  # absolute filepath to the folder containing songs that can be converted into tabs after having a trained model
-SAVED_MODELS_PATH = 'C:/Users/Thomas/Python Projects/Drum-Tabber/models/saved_models'   # absolute filepath to the folder containing the saved models
+SAVED_MODELS_PATH = '/content/gdrive/My Drive/Drum-Tabber/models/saved_models'   # absolute filepath to the folder containing the saved models
 INCLUDE_LR_CHANNELS            = False           # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True   # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL_BEST = False  # if true, saves all best validation checkpoints in the training process
@@ -50,13 +49,13 @@ TRAIN_CHECKPOINT_MODEL_NAME    = ''
 TRAIN_BATCH_SIZE      = 256       # the number of individual images (slices of the spectrogram: windows and their contexts) before the model is updated
 TRAIN_LR_INIT         = 1e-4
 TRAIN_LR_END          = 1e-6
-TRAIN_WARMUP_EPOCHS   = 1
-TRAIN_EPOCHS          = 10
+TRAIN_WARMUP_EPOCHS   = 2
+TRAIN_EPOCHS          = 200
 
 
 # augmentation options
 TRAIN_DATA_AUG             = False
-BACKGROUNDNOISES_PATH      = "C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/BackgroundNoises/normalized"    # the absolute filepath to the folder containing the BackgroundNoises used to add noises
+BACKGROUNDNOISES_PATH      = "/content/gdrive/My Drive/Drum-Tabber-Support-Data/BackgroundNoises/normalized"    # the absolute filepath to the folder containing the BackgroundNoises used to add noises
 SHIFT_CHANCE               = 0.5   # half of songs will start at a random point instead of the beginning, but still include the full song (wrapped around to end)
 POLARITY_CHANCE            = 0.5   # half of the songs will be flipped upside. Should produce more varied samples when adding things
 FREQUENCY_MASK_CHANCE      = 0.25
