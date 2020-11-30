@@ -24,9 +24,15 @@ from src.model import create_DrumTabber
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-def main():
+def main(custom_model_name = None):
     '''
     Main training function used to initiate training of the Drum-Tabber model
+
+    Args:
+        custom_model_name [str]: Default None. If not None, forces the model after training to be saved under this custom name.
+
+    Returns:
+        None
     '''
 
     # set GPU usage
@@ -360,9 +366,27 @@ def main():
 
         return global_steps.numpy(), optimizer.lr.numpy(), song_loss.numpy(), error_df
 
+    def display_error_metrics(error_df):
+        '''
+        Prints the error metrics to the screen from the error metrics in the Dataframe
+
+        Args:
+            error_df [Dataframe]: error metrics Dataframe; could be a summation of various songs or not
+
+        Returns:
+            None (prints to screen)
+        '''
+        acc = (error_df['TP'] + error_df['TN']) /  (error_df['TP'] + error_df['TN'] + error_df['FP'] + error_df['FN'])
+        f1 = (2*error_df['TP']) / (2*error_df['TP'] + error_df['FP'] + error_df['FN'])
+        print('Error_df: \n{}\n'.format(error_df))
+        print('Accuracy: \n{}\n'.format(acc))
+        print('F1 Score: \n{}\n'.format(f1))
+
+        return None
 
     best_val_loss = 1000.0    # start with a high validation loss
     n_val_songs = len(val_set)
+    final_epoch_error_df_list = []
 
     # loop over the number of epochs
     for epoch in range(TRAIN_EPOCHS):
@@ -371,14 +395,13 @@ def main():
             # do a train step with the current spectrogram and target
             glob_steps, current_lr, song_loss, error = song_step(spectrogram, target, label_ref_df, train_set.set_type)
             current_step = (glob_steps % steps_per_epoch) if (glob_steps % steps_per_epoch) != 0 else steps_per_epoch # fixes the modulo returning 0 issue for display
+            if epoch+1 == TRAIN_EPOCHS:   # in the last epoch, want to get the sum of all training error statistics.
+                final_epoch_error_df_list.append(error)
             print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch+1, current_step, steps_per_epoch, current_lr, song_loss))
             # additional error metrics for the training song
-            if (glob_steps % 100) == 0:
-                acc = (error['TP'] + error['TN']) /  (error['TP'] + error['TN'] + error['FP'] + error['FN'])
-                f1 = (2*error['TP']) / (2*error['TP'] + error['FP'] + error['FN'])
-                print('Error_df: \n{}'.format(error))
-                print('Accuracy: \n{}'.format(acc))
-                print('F1 Score: \n{}'.format(f1))
+            if (glob_steps % 200) == 0:
+                print('Single song error metrics:\n')
+                display_error_metrics(error)
 
         total_val = 0.0
         val_error_list = []   # combining all the validation songs into one big error_metrics_df later
@@ -387,15 +410,14 @@ def main():
             _, _2, song_loss, error_ = song_step(spectrogram, target, label_ref_df, val_set.set_type)
             total_val += song_loss
             val_error_list.append(error_)
+            if epoch+1 == TRAIN_EPOCHS:   # in the last epoch, want to get the sum of all training + validation error statistics.
+                final_epoch_error_df_list.append(error_)
         print('\n\nEpoch: {:2} val_loss:{:8.6f} \n\n'.format(epoch+1, total_val/n_val_songs))
         # additional error metrics for the entire validation set (not normalized by the number of validation songs)
         if ((epoch % 5) == 0) or (epoch+1 == TRAIN_EPOCHS):
             val_error = sum(val_error_list)
-            val_acc = (val_error['TP'] + val_error['TN']) /  (val_error['TP'] + val_error['TN'] + val_error['FP'] + val_error['FN'])
-            val_f1 = (2*val_error['TP']) / (2*val_error['TP'] + val_error['FP'] + val_error['FN'])
-            print('Val Error_df: \n{}'.format(val_error))
-            print('Val Accuracy: \n{}'.format(val_acc))
-            print('Val F1 Score: \n{}'.format(val_f1))
+            print('Validation error metrics:\n')
+            display_error_metrics(val_error)
 
         # execute the saving model checkpoint options depending on configs
         if TRAIN_SAVE_CHECKPOINT_ALL_BEST:
@@ -409,9 +431,15 @@ def main():
             save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date'])
             drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
 
-    print(f'Congrats on making it through all {TRAIN_EPOCHS} training epochs!\n')
+    print(f'\nCongrats on making it through all {TRAIN_EPOCHS} training epochs!\n')
+    final_epoch_error_df = sum(final_epoch_error_df_list)
+    print('Here is the final epoch error metrics for all songs are once:')
+    display_error_metrics(final_epoch_error_df)
     print('Saving the current drum_tabber model in memory and configs_dict to storage')
+
     saved_model_name = '{}-E{}-VL{:.5f}'.format(configs_dict['model_type'], TRAIN_EPOCHS, best_val_loss).replace('.','_')
+    if custom_model_name != None:
+        saved_model_name = custom_model_name
     save_drum_tabber_model(drum_tabber = drum_tabber, model_name = saved_model_name, saved_models_path = SAVED_MODELS_PATH, configs_dict = configs_dict)
 
     return None

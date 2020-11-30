@@ -124,7 +124,7 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
 
         # 2 x Block Conv2D-64-3x3-BN-ReLU
         output = conv2D_block(output, 64, (3,3), activation = activ)
-        output = conv2D_block(output, 128, (3,3), activation = activ)
+        output = conv2D_block(output, 64, (3,3), activation = activ)
 
         # DropOut
         output = Dropout(rate = 0.2)(output, training = training)

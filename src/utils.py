@@ -1259,7 +1259,8 @@ def detect_peaks(prediction, peak_pick_parameters = {'pre_max' : 2, 'post_max' :
                                     pre_max = peak_pick_parameters['pre_max'], post_max = peak_pick_parameters['post_max'],
                                     pre_avg = peak_pick_parameters['pre_avg'], post_avg =  peak_pick_parameters['post_avg'],
                                     delta =  peak_pick_parameters['delta'], wait =  peak_pick_parameters['wait'])
-        detected_peaks[peaks_idx, idx] = 1    # assign 1 at sample_idx where peak is detected, all other values are 0
+        if len(peaks_idx) != 0:   # ensures no error occurs if no peaks are found and peak_pick returns an empty set (which means all peaks are 0, already)
+            detected_peaks[peaks_idx, idx] = 1    # assign 1 at sample_idx where peak is detected, all other values are 0
 
     # TODO: if I wanted to implement CLASS-DEPENDENT peak pick parameters, then I would need to rewrite most of this function to introduce a
     #       idx-dependent parameters in the for loop. Additionally, code to check if the dictionary passed is applicable to all or class-dependent
