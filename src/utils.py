@@ -902,7 +902,7 @@ def clean_labels(df):
     """CLEAN UP 3: replace the washy 'w' and 'W' with the normal washy hi-hat notation 'X'  (overall inconsistent notation but consistent enough to map properly)"""
     replace_dict[hihat].update({'w': 'X', 'W':'X'})
 
-    """CLEAN UP 4: get rid of 'r' on the 'SD' column (rimshots on the snare drum) and change 'x' to 'o' (sometimes used in drum solos for easier reading)"""
+    """CLEAN UP 4: get rid of 'r' on the 'SD' column (rim edge hits on the snare drum) and change 'x' to 'o' (sometimes used in drum solos for easier reading)"""
     replace_dict[snare].update({'r' : blank_char, 'x' : 'o', '0' : 'O'})
 
     """CLEAN UP 5: get rid of doubles notation ('d') and flams ('f'), and replace them with equivalent single hits"""
@@ -1214,7 +1214,7 @@ def spectrogram_to_input(spectrogram, configs_dict):
     n_features, n_windows = spectrogram.shape
 
     # TODO: Finish the other model type options when they become available
-    if configs_dict['model_type'] == 'Context-CNN':
+    if configs_dict['model_type'] in  ['Context-CNN', 'TimeFreq-CNN']:
         pre_context, post_context = configs_dict['n_context_pre'], configs_dict['n_context_post']
         input_width = pre_context + 1 + post_context
         min_value = np.min(spectrogram)

@@ -51,13 +51,13 @@ def main(custom_model_name = None):
         FullSet = create_FullSet_df(SONGS_PATH)
         if CLEAN_DATA:
             FullSet = clean_labels(FullSet)
-            MusicAlignedTab.labels_summary(FullSet)
+            MusicAlignedTab.labels_summary(FullSet)  # prints a labels summary out to screen
         FullSet = collapse_class(FullSet_df = FullSet,
-                                    keep_dynamics = KEEP_DYNAMICS,
-                                    keep_bells = KEEP_BELLS,
-                                    keep_toms_separate = KEEP_TOMS_SEPARATE,
-                                    hihat_classes = HIHAT_CLASSES,
-                                    cymbal_classes = CYMBAL_CLASSES)
+                                 keep_dynamics = KEEP_DYNAMICS,
+                                 keep_bells = KEEP_BELLS,
+                                 keep_toms_separate = KEEP_TOMS_SEPARATE,
+                                 hihat_classes = HIHAT_CLASSES,
+                                 cymbal_classes = CYMBAL_CLASSES)
         MusicAlignedTab.labels_summary(FullSet)   # prints a labels summary out to screen
         FullSet_encoded = one_hot_encode(FullSet)
         configs_dict = create_configs_dict(FullSet_encoded)
@@ -87,7 +87,6 @@ def main(custom_model_name = None):
     total_steps = TRAIN_EPOCHS * steps_per_epoch
 
     # load the model to be trained, based on configs.py options
-    # TODO: code the create_DrumTabber function, which initializes to randomized weights
     drum_tabber = create_DrumTabber(n_features = configs_dict['num_features'],
                                     n_classes = configs_dict['num_classes'],
                                     activ = 'relu',
@@ -124,7 +123,7 @@ def main(custom_model_name = None):
         n_features, n_windows = spectrogram.shape
 
         # TODO: Finish the other model type options when they become available
-        if model_type == 'Context-CNN':
+        if model_type in ['Context-CNN', 'TimeFreq-CNN']:
 
             pre_context, post_context = N_CONTEXT_PRE, N_CONTEXT_POST
             input_width = pre_context + 1 + post_context
@@ -160,7 +159,7 @@ def main(custom_model_name = None):
         n_classes, n_windows = target.shape
 
         # TODO: Finish the other model type options when they become available
-        if model_type == 'Context-CNN':
+        if model_type in ['Context-CNN', 'TimeFreq-CNN']:
             target_array = target.T  # only need the transpose because the target array is 2D (n_classes, n_windows)
             # and we want (n_windows, n_classes)
 
@@ -239,7 +238,7 @@ def main(custom_model_name = None):
             tf.Tensor: Tensor of the same shape as logits with component-wise losses calculated
         '''
 
-        if model_type == 'Context-CNN':
+        if model_type in ['Context-CNN', 'TimeFreq-CNN']:
             # losses = tf.nn.sigmoid_cross_entropy_with_logits(labels = target_array.astype(np.float32), logits = prediction)
             losses = tf.nn.weighted_cross_entropy_with_logits(labels = target_array.astype(np.float32),
                                                               logits = prediction,
@@ -379,12 +378,13 @@ def main(custom_model_name = None):
         acc = (error_df['TP'] + error_df['TN']) /  (error_df['TP'] + error_df['TN'] + error_df['FP'] + error_df['FN'])
         f1 = (2*error_df['TP']) / (2*error_df['TP'] + error_df['FP'] + error_df['FN'])
         print('Error_df: \n{}\n'.format(error_df))
-        print('Accuracy: \n{}\n'.format(acc))
+        # print('Accuracy: \n{}\n'.format(acc))
         print('F1 Score: \n{}\n'.format(f1))
 
         return None
 
     best_val_loss = 1000.0    # start with a high validation loss
+    best_val_loss_epoch = 0
     n_val_songs = len(val_set)
     final_epoch_error_df_list = []
 
@@ -420,20 +420,22 @@ def main(custom_model_name = None):
             display_error_metrics(val_error)
 
         # execute the saving model checkpoint options depending on configs
-        if TRAIN_SAVE_CHECKPOINT_ALL_BEST:
+        if TRAIN_SAVE_CHECKPOINT_ALL:
             save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date']+"total_val_loss_{:8.6f}".format(total_val/n_val_songs))
             drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
-        if TRAIN_SAVE_CHECKPOINT_MAX_BEST and (total_val / n_val_songs) < best_val_loss:
-            save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date'])
+        if (total_val / n_val_songs) < best_val_loss:   # this epoch val_loss was the best so far
             best_val_loss = total_val / n_val_songs
-            drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
-        if not TRAIN_SAVE_CHECKPOINT_ALL_BEST and not TRAIN_SAVE_CHECKPOINT_MAX_BEST:
+            best_val_loss_epoch = epoch
+            if TRAIN_SAVE_CHECKPOINT_MAX_BEST:
+                save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date'])
+                drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
+        if not TRAIN_SAVE_CHECKPOINT_ALL and not TRAIN_SAVE_CHECKPOINT_MAX_BEST:
             save_model_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + configs_dict['month_date'])
             drum_tabber.save_weights(filepath=save_model_path, overwrite = True)
 
-    print(f'\nCongrats on making it through all {TRAIN_EPOCHS} training epochs!\n')
+    print('\nCongrats on making it through all {} training epochs!\n The best validation loss was {:8.6f} in epoch {}'.format(TRAIN_EPOCHS, best_val_loss, best_val_loss_epoch))
+    print('Here is the final epoch error metrics for all songs are once:\n')
     final_epoch_error_df = sum(final_epoch_error_df_list)
-    print('Here is the final epoch error metrics for all songs are once:')
     display_error_metrics(final_epoch_error_df)
     print('Saving the current drum_tabber model in memory and configs_dict to storage')
 

@@ -267,7 +267,8 @@ class Dataset(object):
 
         spectro_channels = [] # create either 1 spectrogram or 3 depending on how many channels are being used
         for channel in channels:
-            spectro = lb.feature.melspectrogram(np.asfortranarray(channel), sr=sr, n_fft = WINDOW_SIZE, hop_length = HOP_SIZE, center = False, n_mels = N_MELS, fmax=FMAX) # numpy array of shape (n_mels, t)
+            spectro = lb.feature.melspectrogram(np.asfortranarray(channel), sr=sr, n_fft = WINDOW_SIZE, hop_length = HOP_SIZE,
+                                                center = False, n_mels = N_MELS, fmax=FMAX) # numpy array of shape (n_mels, t)
             # print(f'create_spectrogram: spectro.shape = {spectro.shape}')
             if SHIFT_TO_DB:
                 spectro = lb.power_to_db(spectro, ref = np.max)

@@ -12,7 +12,8 @@ import os
 import json
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import Conv2D, Input, ReLU, LeakyReLU, Dense, BatchNormalization, MaxPool2D, Dropout, Flatten
+from tensorflow.keras.layers import Input, ReLU, LeakyReLU, Dropout, Flatten, Concatenate, Add
+from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, MaxPool2D, ZeroPadding2D, AveragePooling2D
 
 from src.configs import *
 
@@ -64,14 +65,15 @@ knowledge of the encoded df.
             return super().call(x, training)
 '''
 
-def conv2D_block(input, filter_num, kernel_shape, activation = 'relu'):
+def conv2D_block(input, filter_num, kernel_shape, strides_arg = (1,1), activation = 'relu', padding_arg = 'same'):
     '''
     Helper builder function to define a Conv2D block, complete with BatchNorm and activation that follows the Conv2D layer
 
     Args:
         input [tensorflow tensor]: the tensorflow tensor that is the next input of the current CNN
         filter_num [int]: how many filters are present in this Conv2D
-        kernel_shape [int tuple]: the shape of each filte. Usually will be (3,3) unless there is experiments with it / no context
+        kernel_shape [int tuple]: the shape of each filter.
+        strides_arg [int tupe]: Default (1,1), the shape of the strides that will be used
         activ [str]: Default 'relu', will determine the activation function of this Conv2D block
 
     Returns:
@@ -79,12 +81,60 @@ def conv2D_block(input, filter_num, kernel_shape, activation = 'relu'):
     '''
 
 
-    output = Conv2D(filters = filter_num, kernel_size = kernel_shape, strides = (1,1),
-                    padding = 'same',  data_format = 'channels_last', use_bias=False,
+    output = Conv2D(filters = filter_num, kernel_size = kernel_shape, strides = strides_arg,
+                    padding = padding_arg,  data_format = 'channels_last', use_bias=False,
                     kernel_regularizer=tf.keras.regularizers.l2(0.0001) )(input)
 
     output = BatchNormalization()(output)
 
+    if activation == 'relu':
+        output = ReLU()(output)
+    elif activation == 'leaky_relu':
+        output = LeakyReLU(alpha=0.2)(output)
+    elif activation == 'none':   # don't apply any activation. In the case of residual block
+        pass
+
+    return output
+
+def residual_c_block(input, filter_nums, strides_arg = (1,1), activation = 'relu', padding_arg='same'):
+
+    input_skip = input
+    filter1, filter2 = filter_nums
+
+    # first block (1x1 conv)
+    output = conv2D_block(input, filter1, kernel_shape=(1,1), strides_arg = strides_arg, activation = activation)
+
+    # second block (3x3 conv)
+    output = conv2D_block(output, filter1, kernel_shape=(3,3), strides_arg = strides_arg, activation = activation)
+
+    # third block (1x1) (no activation)
+    output = conv2D_block(output, filter2, kernel_shape=(1,1), strides_arg = strides_arg, activation='none')
+
+    # shortcut block (no activation)
+    input_skip = conv2D_block(input_skip, filter2, kernel_shape=(1,1), strides_arg = strides_arg, activation='none')
+
+    # Add and Activate
+    output = Add()([output, input_skip])
+    if activation == 'relu':
+        output = ReLU()(output)
+    elif activation == 'leaky_relu':
+        output = LeakyReLU(alpha=0.2)(output)
+
+    return output
+
+def residual_i_block(input, filter_nums, strides_arg = (1,1), activation = 'relu', padding_arg='same'):
+    ''' note that the filter2 needs to be the same number of channels as the input'''
+    input_skip = input
+    filter1, filter2 = filter_nums
+
+    # first block (1x1 conv)
+    output = conv2D_block(input, filter1, kernel_shape=(1,1), strides_arg = strides_arg, activation = activation)
+
+    # second block (3x3 conv)
+    output = conv2D_block(output, filter2, kernel_shape=(3,3), strides_arg = strides_arg, activation = activation)
+
+    # Add and Activate
+    output = Add()([output, input_skip])
     if activation == 'relu':
         output = ReLU()(output)
     elif activation == 'leaky_relu':
@@ -137,6 +187,69 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
 
         # 1 x 512 FC Dense + activation
         output = Dense(512, activation = activ)(output)
+        output = BatchNormalization()(output)
+
+        # FC Dense sigmoid activation
+        output = Dense(n_classes, activation = 'sigmoid')(output)
+
+
+    elif MODEL_TYPE == 'TimeFreq-CNN':
+        '''
+        "TimeFreq-CNN" stands for Time+Frequency Convolutional NN. IMO the previous literature borrowed TOO many things
+        from the computer vision community. For one, most CNN filters/strides are square because a picture, inherently,
+        has "equivalent" x- and y-axis that should be treated as equal because they both represent spatial dimensions.
+        This is NOT TRUE for spectrograms. In a spectrogram, the x-axis represents time and the y-axis represents the
+        frequencies present (the power of each frequency bin). As such, square filters don't make much sense.
+        However if we believe filters can learn general enough features, than square features, after multiple conv blocks,
+        should be able to learn general features. We can help this process along by treating the time and frequency axes as
+        differently from each other in certain regards.
+
+        The "TimeFreq-CNN" architecture relies on "context" structure and thus shares similar code to Context-CNN
+        model type in other parts of the code base.
+        '''
+
+        #  'channels_last' ordering: will be using the shape of layers as (batch_size, n_features, n_context, channels = 1)
+        input_layer = Input(shape = (n_features, (N_CONTEXT_PRE+1+N_CONTEXT_POST), 1, ), dtype = 'float32')  # creates a None in first dimension for the batch size
+
+        # ZeroPadding 2D layer
+        zero_padded = ZeroPadding2D(padding = (0,0))(input_layer)
+
+        # Frequency branch: the convs that are looking for features across wide range of freqencies (tall filters)
+        freq_branch = conv2D_block(zero_padded, 64,  kernel_shape = (15,3), strides_arg = (1,1), activation = activ)
+        # Frequency branch: MaxPool
+        freq_branch = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(freq_branch)
+        # Frequency branch: residual i block
+        freq_branch = residual_i_block(freq_branch, filter_nums=(32,64), strides_arg = (1,1), activation = activ)
+
+        # Time branch: the convs that are looking for features across wide range of time (wide filters)
+        time_branch = conv2D_block(zero_padded, 64,  kernel_shape = (3,9), strides_arg = (1,1), activation = activ) # note that input layer goes here as well
+        # Time branch: MaxPool
+        time_branch = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(time_branch)
+        # Time branch: residual i block
+        time_branch = residual_i_block(time_branch, filter_nums=(32,64), strides_arg = (1,1), activation = activ)
+
+
+        # Combine the branches, concatenating along the channels
+        timefreq = Concatenate()([freq_branch, time_branch])
+        # convolve the timefreq, expanding the num_channels using a res_block
+        timefreq = conv2D_block(timefreq, 128,  kernel_shape = (3,3), strides_arg = (1,1), activation = activ)
+        timefreq = residual_c_block(timefreq, filter_nums=(128,256), strides_arg = (1,1), activation = activ)
+        timefreq = residual_i_block(timefreq, filter_nums=(128,256), strides_arg = (1,1), activation = activ)
+
+        # AveragePooling2D
+        timefreq = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(timefreq)
+
+        # 1x1 conv the TimeFreq: "downsampling" the number of channels
+        timefreq = conv2D_block(timefreq, 64, kernel_shape = (1,1), strides_arg = (1,1), activation = activ)
+
+        # AveragePooling2D
+        timefreq = MaxPool2D(pool_size = (2,2), strides=None, padding = 'same')(timefreq)
+
+        # Flatten to prepare for Dense
+        output = Flatten()(timefreq)
+
+        # 1 x 256 FC Dense + activation
+        output = Dense(256, activation = activ)(output)
         output = BatchNormalization()(output)
 
         # FC Dense sigmoid activation
