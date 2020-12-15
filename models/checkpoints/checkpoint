@@ -1,2 +1,2 @@
-model_checkpoint_path: "TimeFreq-CNN-Dec-04"
-all_model_checkpoint_paths: "TimeFreq-CNN-Dec-04"
+model_checkpoint_path: "TimeFreq-CNN-Dec-12"
+all_model_checkpoint_paths: "TimeFreq-CNN-Dec-12"

@@ -341,8 +341,11 @@ def main(custom_model_name = None):
             channel_loss = channel_loss / num_updates
             song_loss += channel_loss
 
+        error_df = sum(error_df_list).copy() # the sum calls the + operator, which is overloaded for DataFrames to add element-wise values!
+        song_loss = song_loss/n_channels
+
+        # after the full song+channels is done, update learning rate, using warmup and cosine decay
         if set_type == 'train':
-            # after the full song+channels is done, update learning rate, using warmup and cosine decay
             global_steps.assign_add(1)
             if global_steps < warmup_steps:
                 lr = (global_steps / warmup_steps) * TRAIN_LR_INIT   # linearly increase lr until out of warmup steps
@@ -353,15 +356,11 @@ def main(custom_model_name = None):
 
         # write summary data
         # TODO: understand what the writer TF is doing
-        '''
-        with writer.as_default():
-            tf.summary.scalar("lr", optimizer.lr, step=global_steps)
-            tf.summary.scalar("loss/total_loss", loss, step=global_steps)
-        writer.flush()
-        '''
-
-        error_df = sum(error_df_list).copy() # the sum calls the + operator, which is overloaded for DataFrames to add element-wise values!
-        song_loss = song_loss/n_channels
+        if set_type == 'train':
+            with writer.as_default():
+                tf.summary.scalar("lr", optimizer.lr, step=global_steps)
+                tf.summary.scalar("song_loss", song_loss, step=global_steps)
+            writer.flush()
 
         return global_steps.numpy(), optimizer.lr.numpy(), song_loss.numpy(), error_df
 
@@ -385,23 +384,21 @@ def main(custom_model_name = None):
 
     best_val_loss = 1000.0    # start with a high validation loss
     best_val_loss_epoch = 0
-    n_val_songs = len(val_set)
+    n_train_songs, n_val_songs = len(train_set), len(val_set)
     final_epoch_error_df_list = []
 
     # loop over the number of epochs
     for epoch in range(TRAIN_EPOCHS):
         print(f'Starting Epoch {epoch+1}/{TRAIN_EPOCHS}')
+        train_songs_loss = 0.0
         for spectrogram, target, label_ref_df in train_set:   # outputs a full song's spectrogram and target and label reference df, over the entire dataset
             # do a train step with the current spectrogram and target
             glob_steps, current_lr, song_loss, error = song_step(spectrogram, target, label_ref_df, train_set.set_type)
             current_step = (glob_steps % steps_per_epoch) if (glob_steps % steps_per_epoch) != 0 else steps_per_epoch # fixes the modulo returning 0 issue for display
+            train_songs_loss += song_loss
             if epoch+1 == TRAIN_EPOCHS:   # in the last epoch, want to get the sum of all training error statistics.
                 final_epoch_error_df_list.append(error)
             print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch+1, current_step, steps_per_epoch, current_lr, song_loss))
-            # additional error metrics for the training song
-            if (glob_steps % 200) == 0:
-                print('Single song error metrics:\n')
-                display_error_metrics(error)
 
         total_val = 0.0
         val_error_list = []   # combining all the validation songs into one big error_metrics_df later
@@ -418,6 +415,11 @@ def main(custom_model_name = None):
             val_error = sum(val_error_list)
             print('Validation error metrics:\n')
             display_error_metrics(val_error)
+
+        with val_writer.as_default():
+            tf.summary.scalar('epoch_loss/val_loss', total_val/n_val_songs, step=epoch)
+            tf.summary.scalar('epoch_loss/train_songs_loss', train_songs_loss/n_train_songs, step = epoch)
+        val_writer.flush()
 
         # execute the saving model checkpoint options depending on configs
         if TRAIN_SAVE_CHECKPOINT_ALL:

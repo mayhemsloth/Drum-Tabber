@@ -1048,12 +1048,13 @@ def create_configs_dict(df):
                     'n_context_pre' : N_CONTEXT_PRE,
                     'n_context_post': N_CONTEXT_POST,
                     'include_fo_differential'  : INCLUDE_FO_DIFFERENTIAL,
-                    'positive_window_fraction' : POSITIVE_WINDOW_FRACTION,
                     'negative_window_fraction' : NEGATIVE_WINDOW_FRACTION,
+                    'positive_window_fraction' : POSITIVE_WINDOW_FRACTION,
                     'tolerance_window' : TOLERANCE_WINDOW,
                     'classification_dict' : {'clean_date' : CLEAN_DATA, 'keep_dynamics': KEEP_DYNAMICS, 'keep_bells': KEEP_BELLS,
                                              'keep_toms_seperate' : KEEP_TOMS_SEPARATE, 'hihat_classes' : HIHAT_CLASSES, 'cymbal_classes' : CYMBAL_CLASSES},
-                    'month_date' : month_date
+                    'month_date' : month_date,
+                    'training_dict' : {'train_data_aug' : TRAIN_DATA_AUG, 'train_epochs': TRAIN_EPOCHS}
                     }
 
     return configs_dict

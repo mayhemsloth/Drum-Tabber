@@ -216,17 +216,19 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
 
         # Frequency branch: the convs that are looking for features across wide range of freqencies (tall filters)
         freq_branch = conv2D_block(zero_padded, 64,  kernel_shape = (15,3), strides_arg = (1,1), activation = activ)
-        # Frequency branch: MaxPool
-        freq_branch = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(freq_branch)
         # Frequency branch: residual i block
         freq_branch = residual_i_block(freq_branch, filter_nums=(32,64), strides_arg = (1,1), activation = activ)
+        # Frequency branch: MaxPool
+        freq_branch = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(freq_branch)
+
 
         # Time branch: the convs that are looking for features across wide range of time (wide filters)
         time_branch = conv2D_block(zero_padded, 64,  kernel_shape = (3,9), strides_arg = (1,1), activation = activ) # note that input layer goes here as well
-        # Time branch: MaxPool
-        time_branch = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(time_branch)
         # Time branch: residual i block
         time_branch = residual_i_block(time_branch, filter_nums=(32,64), strides_arg = (1,1), activation = activ)
+        # Time branch: MaxPool
+        time_branch = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(time_branch)
+
 
 
         # Combine the branches, concatenating along the channels
@@ -234,16 +236,16 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
         # convolve the timefreq, expanding the num_channels using a res_block
         timefreq = conv2D_block(timefreq, 128,  kernel_shape = (3,3), strides_arg = (1,1), activation = activ)
         timefreq = residual_c_block(timefreq, filter_nums=(128,256), strides_arg = (1,1), activation = activ)
-        timefreq = residual_i_block(timefreq, filter_nums=(128,256), strides_arg = (1,1), activation = activ)
+        #timefreq = residual_i_block(timefreq, filter_nums=(128,256), strides_arg = (1,1), activation = activ)
 
-        # AveragePooling2D
-        timefreq = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(timefreq)
+        # Asymmetric Pool2D
+        timefreq = MaxPool2D(pool_size = (3,1), strides=None, padding = 'same')(timefreq)
 
         # 1x1 conv the TimeFreq: "downsampling" the number of channels
         timefreq = conv2D_block(timefreq, 64, kernel_shape = (1,1), strides_arg = (1,1), activation = activ)
 
-        # AveragePooling2D
-        timefreq = MaxPool2D(pool_size = (2,2), strides=None, padding = 'same')(timefreq)
+        # Asymmetric Pool2D
+        timefreq = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(timefreq)
 
         # Flatten to prepare for Dense
         output = Flatten()(timefreq)

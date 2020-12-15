@@ -62,7 +62,7 @@ class Dataset(object):
                 self.song_count += 1
                 return spectrogram, target, label_ref_df
 
-            else:   # we went through all the songs in the Dataset, so let's reset the object to it's default state and randomize
+            else:   # we went through all the songs in the Dataset, so let's reset the object to its default state and randomize
                 self.song_count = 0
                 random.shuffle(self.song_list)
                 raise StopIteration       # stops the iterator from continuing
