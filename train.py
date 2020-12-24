@@ -26,13 +26,13 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 def main(custom_model_name = None):
     '''
-    Main training function used to initiate training of the Drum-Tabber model
+    Main training function used to initiate training of the Drum-Tabber model. Tons of options are available in the configs.py file constants
 
     Args:
         custom_model_name [str]: Default None. If not None, forces the model after training to be saved under this custom name.
 
     Returns:
-        None
+        None (Trains a model, writes to log that can be read by TensorBoard, saves the final model and configs dictionary describing it)
     '''
 
     # set GPU usage
@@ -42,10 +42,11 @@ def main(custom_model_name = None):
         except RuntimeError: pass
 
     # create logs directory and the tf.writer log
-    if os.path.exists(TRAIN_LOGDIR):
-        shutil.rmtree(TRAIN_LOGDIR)
-    writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
-    val_writer = tf.summary.create_file_writer(TRAIN_LOGDIR)
+    logdir = os.path.join(TRAIN_LOGDIR, custom_model_name) if custom_model_name is not None else os.path.join(TRAIN_LOGDIR, 'unnamed_model')
+    if os.path.exists(logdir):
+        shutil.rmtree(logdir)
+    train_writer = tf.summary.create_file_writer(os.path.join(logdir,'train'))
+    val_writer = tf.summary.create_file_writer(os.path.join(logdir,'val'))
 
     if TRAIN_FULLSET_MEMORY:       # able to create and load the entire FullSet into memory
         FullSet = create_FullSet_df(SONGS_PATH)
@@ -73,7 +74,7 @@ def main(custom_model_name = None):
     target_counts = np.zeros(shape=(configs_dict['num_classes']), dtype=np.float32)
     total_windows = 0
     for dset in [train_set, val_set]:
-        for _, target, _2 in dset:
+        for _, target, _2, _3 in dset:
             n_class, n_window, n_channel = target.shape   # target.shape = (n_classes, n_windows, n_channels)
             target_counts += np.sum(np.count_nonzero(target, axis=1), axis=1)   # sums all nonzero_counts across all windows and channels
             total_windows += n_window*n_channel
@@ -239,7 +240,7 @@ def main(custom_model_name = None):
         '''
 
         if model_type in ['Context-CNN', 'TimeFreq-CNN']:
-            # losses = tf.nn.sigmoid_cross_entropy_with_logits(labels = target_array.astype(np.float32), logits = prediction)
+            #losses = tf.nn.sigmoid_cross_entropy_with_logits(labels = target_array.astype(np.float32), logits = prediction)
             losses = tf.nn.weighted_cross_entropy_with_logits(labels = target_array.astype(np.float32),
                                                               logits = prediction,
                                                               pos_weight = 1/target_freq)
@@ -251,7 +252,7 @@ def main(custom_model_name = None):
         return losses
 
     # Train and Validation Step FUNCTION
-    def song_step(spectrogram, target, label_ref_df, set_type):
+    def song_step(spectrogram, target, label_ref_df, set_type, song_name):
         '''
         Controls both training and validation step in model training
 
@@ -265,19 +266,28 @@ def main(custom_model_name = None):
             target [np.array]: for this song, the one-hot target array of shape (n_classes, n_windows, n_channels)
             label_ref_df [Dataframe]: for this song, a dataframe containing the labels and the 'sample start' column used to find accuracy
             set_type [str]: either 'train' or 'val' to determine which type of song_step to do
+            song_name [str]: name of the song that the song step function is currently working on
 
         Returns:
             float: the global training step that we are currently on
             float: the learning rate after being updated by this training step
-            float: the
+            float: the song loss of the song that was just processed
             DataFrame: the error dataframe that contains the tabulated True/False Positive/Negatives by class for this song
         '''
 
         # full spectrogram shape dimensions
         n, m, n_channels = spectrogram.shape
 
-        if set_type == 'train': batch_size = TRAIN_BATCH_SIZE   # set correct batch size here for rest of function
-        elif set_type =='val': batch_size = VAL_BATCH_SIZE
+        class_names = [x for x in list(label_ref_df.columns) if '_' in x]
+
+        if set_type == 'train':
+            batch_size = TRAIN_BATCH_SIZE   # set correct batch size here for rest of function
+            training_update = True          # set correct training update bool when feeding forward through the model
+            writer_for_step = train_writer
+        elif set_type =='val':
+            batch_size = VAL_BATCH_SIZE
+            training_update = False
+            writer_for_step = val_writer
 
         song_loss = 0.0
         error_df_list = []
@@ -293,6 +303,7 @@ def main(custom_model_name = None):
             # the number of model updates, based on the batch size and number of inputs
             num_updates = int(np.ceil(num_examples/batch_size))
             channel_loss = 0.0
+            channel_loss_by_class = tf.zeros(shape=len(class_names))  # saves all the losses split out by class
             max_samples = int(num_updates*batch_size*HOP_SIZE)
 
             # making an empty array to concatenate later for building up the error metrics array after converting to peaks
@@ -300,7 +311,6 @@ def main(custom_model_name = None):
 
             # go through batches and update model
             for idx in range(num_updates):
-                total_loss = 0.0
                 start_batch_slice = idx*batch_size
                 end_batch_slice = (idx+1)*batch_size
 
@@ -317,21 +327,22 @@ def main(custom_model_name = None):
                         Additionally, when I implement the Recurrent NN part, the order of the samples matter. This method
                         preserves relative time order between the different samples.
                         '''
-                        prediction = drum_tabber(np.concatenate( (input_array[start_batch_slice:, ...], input_array[ 0:end_batch_slice-num_examples , ...]) , axis=0), training = True)
+                        prediction = drum_tabber(np.concatenate( (input_array[start_batch_slice:, ...], input_array[ 0:end_batch_slice-num_examples , ...]) , axis=0), training = training_update)
                         losses = compute_loss(prediction, np.concatenate( (target_array[start_batch_slice:, :], target_array[0: end_batch_slice - num_examples, :])  , axis=0), MODEL_TYPE, target_freq)
                     else:
-                        prediction = drum_tabber(input_array[ start_batch_slice : end_batch_slice , ...], training = True)   # the forward pass though the current model, with training = True
+                        prediction = drum_tabber(input_array[ start_batch_slice : end_batch_slice , ...], training = training_update)   # the forward pass though the current model, with training = True
                         losses = compute_loss(prediction, target_array[start_batch_slice : end_batch_slice, :], MODEL_TYPE, target_freq)
 
-
-                    total_loss += tf.math.reduce_mean(losses)   # gets the average of all the classes
+                    batch_loss = tf.math.reduce_mean(losses)   # gets the average of all the classes, reduces down to scalar
+                    batch_loss_by_class = tf.math.reduce_mean(losses, axis=0)  # gets the average of each class for the batch
                     if set_type == 'train':   # if we are in a train set, update the model
                         # apply gradients to update the model, the backward pass
-                        gradients = tape.gradient(total_loss, drum_tabber.trainable_variables)
+                        gradients = tape.gradient(batch_loss, drum_tabber.trainable_variables)
                         optimizer.apply_gradients(zip(gradients, drum_tabber.trainable_variables))
 
                 prediction_list.append(prediction.numpy())
-                channel_loss += total_loss
+                channel_loss += batch_loss
+                channel_loss_by_class += batch_loss_by_class
 
             full_chan_peaks = detect_peaks(np.concatenate(prediction_list, axis=0)) # concat the list of prediction arrays, and then feed it into detect_peaks function
 
@@ -339,12 +350,22 @@ def main(custom_model_name = None):
             error_df_list.append(chan_error_df)
 
             channel_loss = channel_loss / num_updates
+            channel_loss_by_class = channel_loss_by_class / num_updates
+            ''' THESE STEPS ARE SIGNIFICANT TIME SINKS DUE TO WRITING TO DISK COMMENT THEM OUT FOR NOW
+            # write a bunch of information to the current writer_for_step, including channel loss by class
+            with writer_for_step.as_default():
+                tf.summary.scalar('channel_loss/{}/{}/all_classes'.format(song_name,channel), channel_loss, step = epoch)
+                for idx, class_name in enumerate(class_names):
+                    tf.summary.scalar('channel_loss/{}/{}/{}'.format(song_name,channel,class_name), channel_loss_by_class[idx],  step = epoch)
+            writer_for_step.flush()
+            '''
+
             song_loss += channel_loss
 
         error_df = sum(error_df_list).copy() # the sum calls the + operator, which is overloaded for DataFrames to add element-wise values!
         song_loss = song_loss/n_channels
 
-        # after the full song+channels is done, update learning rate, using warmup and cosine decay
+        # after the full song+channels is done, update learning rate, using warmup and cosine decay. Additionally, write summary data
         if set_type == 'train':
             global_steps.assign_add(1)
             if global_steps < warmup_steps:
@@ -353,14 +374,13 @@ def main(custom_model_name = None):
                 lr = TRAIN_LR_END + 0.5 * (TRAIN_LR_INIT - TRAIN_LR_END)*(
                     (1 + tf.cos( ( (global_steps - warmup_steps) / (total_steps - warmup_steps) ) * np.pi)))
             optimizer.lr.assign(lr.numpy())
-
-        # write summary data
-        # TODO: understand what the writer TF is doing
-        if set_type == 'train':
-            with writer.as_default():
+            # write summary data
+            # TODO: understand what the writer TF is doing better with respect to TensorBoard
+            with train_writer.as_default():
                 tf.summary.scalar("lr", optimizer.lr, step=global_steps)
                 tf.summary.scalar("song_loss", song_loss, step=global_steps)
-            writer.flush()
+                tf.summary.scalar('song_loss/{}'.format(song_name), song_loss, step=epoch)
+            train_writer.flush()
 
         return global_steps.numpy(), optimizer.lr.numpy(), song_loss.numpy(), error_df
 
@@ -391,20 +411,20 @@ def main(custom_model_name = None):
     for epoch in range(TRAIN_EPOCHS):
         print(f'Starting Epoch {epoch+1}/{TRAIN_EPOCHS}')
         train_songs_loss = 0.0
-        for spectrogram, target, label_ref_df in train_set:   # outputs a full song's spectrogram and target and label reference df, over the entire dataset
+        for spectrogram, target, label_ref_df, song_name in train_set:   # outputs a full song's spectrogram and target and label reference df, over the entire dataset
             # do a train step with the current spectrogram and target
-            glob_steps, current_lr, song_loss, error = song_step(spectrogram, target, label_ref_df, train_set.set_type)
+            glob_steps, current_lr, song_loss, error = song_step(spectrogram, target, label_ref_df, train_set.set_type, song_name)
             current_step = (glob_steps % steps_per_epoch) if (glob_steps % steps_per_epoch) != 0 else steps_per_epoch # fixes the modulo returning 0 issue for display
             train_songs_loss += song_loss
             if epoch+1 == TRAIN_EPOCHS:   # in the last epoch, want to get the sum of all training error statistics.
                 final_epoch_error_df_list.append(error)
-            print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}'.format(epoch+1, current_step, steps_per_epoch, current_lr, song_loss))
+            print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}, {}'.format(epoch+1, current_step, steps_per_epoch, current_lr, song_loss, song_name))
 
         total_val = 0.0
         val_error_list = []   # combining all the validation songs into one big error_metrics_df later
-        for spectrogram, target, label_ref_df in val_set:
+        for spectrogram, target, label_ref_df, song_name in val_set:
             # do a validation step with the current spectrogram and target
-            _, _2, song_loss, error_ = song_step(spectrogram, target, label_ref_df, val_set.set_type)
+            _, _2, song_loss, error_ = song_step(spectrogram, target, label_ref_df, val_set.set_type, song_name)
             total_val += song_loss
             val_error_list.append(error_)
             if epoch+1 == TRAIN_EPOCHS:   # in the last epoch, want to get the sum of all training + validation error statistics.
@@ -416,9 +436,11 @@ def main(custom_model_name = None):
             print('Validation error metrics:\n')
             display_error_metrics(val_error)
 
+        with train_writer.as_default():
+            tf.summary.scalar('epoch_loss/songs_loss', train_songs_loss/n_train_songs, step = epoch)
+        train_writer.flush()
         with val_writer.as_default():
-            tf.summary.scalar('epoch_loss/val_loss', total_val/n_val_songs, step=epoch)
-            tf.summary.scalar('epoch_loss/train_songs_loss', train_songs_loss/n_train_songs, step = epoch)
+            tf.summary.scalar('epoch_loss/songs_loss', total_val/n_val_songs, step = epoch)
         val_writer.flush()
 
         # execute the saving model checkpoint options depending on configs

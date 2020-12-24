@@ -19,8 +19,8 @@ from datetime import date
 from pydub import AudioSegment   # main class from pydub package used to upload mp3 into Python and then get a NumPy array
 import IPython.display as ipd    # ability to play audio in Jupyter Notebooks if needed
 
-
 from src.configs import *
+
 
 
 class MusicAlignedTab(object):
@@ -29,19 +29,20 @@ class MusicAlignedTab(object):
     This class is mainly used to give the user a view into the alignments, augmentation effects, and other attributes that
     might need user verification before further processing is done.
     """
-    def __init__(self, song_name):   # song_name is the string in the form of the folder names ('forever_at_last')
+    def __init__(self, song_name, include_drums = False):   # song_name is the string in the form of the folder names ('forever_at_last')
         self.filepaths = {'folder' : os.path.join(SONGS_PATH, song_name), 'json' : os.path.join(SONGS_PATH, song_name, song_name+'.json') } # filepaths dictionary
         # TODO: maybe add try except block here on importing of json file?
         self.json_dict = self.parse_json_file(self.filepaths['json'])              # json_dict has 'song', 'tab_file', 'tab_char_labels', and 'alignment_info' as keys
         self.filepaths['song'] = os.path.join(self.filepaths['folder'], self.json_dict['song'])
         self.filepaths['tab'] = os.path.join(self.filepaths['folder'], self.json_dict['tab_file'])
+        self.song_name = song_name
+        self.include_drums = include_drums
         self.hf_tab = self.import_tab()
         self.mf_tab = self.hf_to_mf(self.hf_tab)
         self.MAT = self.align_tab_with_music(self.mf_tab, self.json_dict['alignment_info'])
 
     def __str__(self):
-        song_file = str(self.json_dict['song'])
-        return 'This MAT is for ' + song_file
+        return 'This MAT is for ' + self.song_name
 
     # START OF MAIN HIGH LEVEL INIT FUNCTIONS
     def parse_json_file(self,json_fp):
@@ -148,13 +149,14 @@ class MusicAlignedTab(object):
     # END OF MAIN HIGH LEVEL INIT FUNCTIONS
 
     # START OF HUMAN-FACING CLASS UTILITY FUNCTIONS
-    def random_alignment_checker(self, drums_to_be_checked, num_buffer_slices):
+    def random_alignment_checker(self, drums_to_be_checked, num_buffer_slices, check_drums_only = False):
         """
         Outputs a user-friendly way to check a random section of a song, to ensure that a music aligned tab is properly aligned
 
         Args:
             drums_to_be_checked [list]: a list of strings that correspond to the master format chars that are being requested to be checked. One random, non-blank result will be checked
             num_buffer_slices [int]: number of slices that is shown *after* the one that is randomly chosen for inspection
+            check_drums_only [bool]: Default False. If true, loads the 'drums slice' audio information instead of the full song audio information in 'song slice'
 
         Returns:
             None (outputs to display)
@@ -164,7 +166,10 @@ class MusicAlignedTab(object):
 
         drums_possible = list(set(drums_to_be_checked) & set(MAT_df.columns))  # getting the intersection so that no errors are thrown later
 
-        drop_MAT = MAT_df.drop(columns = ['song slice', 'sample start'], errors = 'ignore')          # drop the slices column so we are left with only tab
+        drop_MAT = MAT_df.drop(columns = ['song slice', 'sample start', 'drums slice'], errors = 'ignore')          # drop the slices column so we are left with only tab
+
+        audio_to_load = 'drums slice' if (self.include_drums and check_drums_only) else 'song slice'
+
 
         for drum in drums_possible:
             print("Sampling a " + str(drum) + " event for alignment check... Loading tab and audio slice")
@@ -174,8 +179,8 @@ class MusicAlignedTab(object):
                 sel_index = selection.index[0]                            # grab index, which refers to the MAT_df index
                 slices = []                                               # build up this array
                 for idx in range(num_buffer_slices):                      # append the buffer slices after
-                    if (sel_index + idx) < len(MAT_df.index):               # checks to make sure there are slices after
-                        slices.append(list(MAT_df.at[sel_index+idx, 'song slice']))  # appends the next slices of the audio after the random selection
+                    if (sel_index + idx) < len(MAT_df.index):             # ensures there are slices after (stops index slicing errors)
+                        slices.append(list(MAT_df.at[sel_index+idx, audio_to_load]))  # appends the next slices of the audio after the random selection
 
                 # displaying of tab
                 print(drop_MAT.iloc[int(sel_index):int(sel_index+num_buffer_slices), :].transpose()[::-1])  # print the tab corresponding to the audio in the correct orientation that we are used to seeing
@@ -289,6 +294,7 @@ class MusicAlignedTab(object):
         with warnings.catch_warnings():    # used to ignore the Pydub warning that always comes up
             warnings.simplefilter("ignore")
             lb_song, sr_song = lb.core.load(song_title, sr=None, mono=channel_mono) # uses librosa to output a np.ndarray of shape (n,) or (2,n) depending on the channels
+
 
         song_info['sr'] = sr_song  # add the sample rate, as loaded from librosa, into the song_info dict
 
@@ -404,7 +410,24 @@ class MusicAlignedTab(object):
         # with the song slices in the correct index position
         song_slices_df = self.slices_into_df(song_slices_pre_fdn, song_slices_post_fdn, fdn_row_index, tab_len, fdn_sample_loc)
 
+
         df_MAT = tab_df.merge(song_slices_df, how = 'left', left_index=True, right_index = True)     # merge the tab frame with the song slice frame!
+
+        # TODO: add a check to ensure the drums only file exists here? or just allow librosa to throw an error when attempting to load a non-existent file
+        if self.include_drums:    # include the drums mp3 in a column called 'drums slice' to be added to the df_MAT
+            drums_only_path = os.path.join(self.filepaths['folder'], os.path.splitext(os.path.basename(self.filepaths['song']))[0]+'_drums.mp3')
+            with warnings.catch_warnings():    # used to ignore the Pydub warning that always comes up when loading in mp3
+                warnings.simplefilter("ignore")
+                lb_drums, sr_drums = lb.core.load(drums_only_path, sr=None, mono=False)
+            lb_drums = lb_drums.T
+            assert lb_drums.shape == song.shape, 'Librosa-loaded song file and drums-only audio file have different shapes!'
+            assert sample_rate == sr_drums, 'Sample rate of song is different from sample rate of drums-only audio file!'
+            # run the drums only audio through the slicing functions and the merge to the already existing DataFrame
+            drum_slices_post_fdn = self.get_post_fdn_slice(lb_drums, fdn_sample_loc, sample_num, sample_delta, decimal_delta, triplets_bool, tab_df, fdn_row_index)
+            drum_slices_pre_fdn = self.get_pre_fdn_slice(lb_drums, fdn_sample_loc, sample_num, sample_delta, decimal_delta)
+            drum_slices_df = self.slices_into_df(drum_slices_pre_fdn, drum_slices_post_fdn, fdn_row_index, tab_len, fdn_sample_loc)
+            drum_slices_df.rename(columns={'song slice': 'drums slice'}, inplace=True)
+            df_MAT = pd.concat([ df_MAT, drum_slices_df['drums slice'] ], axis=1) # final
 
         return df_MAT
 
@@ -821,7 +844,7 @@ def create_FullSet_df(songs_file_path):
     # print(f'list_of_songs = {list_of_songs}')
 
     for song in list_of_songs:                # go through all the songs folders
-        MAT_class = MusicAlignedTab(song)     # create the MAT class object
+        MAT_class = MusicAlignedTab(song, include_drums = TRAIN_USE_DRUM_STEM)     # create the MAT class object
         MATDF_dict[song] = MAT_class.MAT      # extract and keep only the dataframe of the class object
 
     # get blank char to use in this function
@@ -852,7 +875,7 @@ def one_hot_encode(df):
     """
     tk_label, measure_char, blank_char = TK_LABEL, MEASURE_CHAR, BLANK_CHAR # get blank_char mainly
 
-    col_list = list(df.drop(columns = ['song slice', 'sample start'], errors = 'ignore').columns) # if 'ignore', suppress error and only existing labels are dropped
+    col_list = list(df.drop(columns = ['song slice', 'sample start', 'drums slice'], errors = 'ignore').columns) # if 'ignore', suppress error and only existing labels are dropped
     print(f'one_hot_encode: col_list before encoding = {col_list}')
     for col in col_list:                     # goes through all the column names except 'song slice' and 'sample start'
         uniques = [uniq for uniq in df[col].unique() if uniq is not blank_char] # list of unique values found in current column
@@ -938,7 +961,8 @@ def collapse_class(FullSet_df, keep_dynamics = False, keep_bells = False, keep_t
         hihat_classes [int]: Default 1. Hihats have two, or arguably three, distinct classes. One class is the completely closed hihat hit that is a "tink" sound.
                             A second very common way to play hihat is called "washy" where the two hihats are slightly open and can interact with each other after being hit
                             A third class is the completely open hihat, where the top hihat doesn't interact with the bottom at all. This is similar to a cymbal hit
-                            Default 2 classes splits
+                            If == 2 classes, washy and open are combined into one class, and then separated from the "tink" class.
+                            If == 3 classes,
         cymbal_classes [int]: Default 1. Cymbals come in many sizes, tones, and flavors. The most reasonable thing to do is to collapse all cymbals into one class
                               But what about the Ride cymbal? which normally is not "crashed" but hit like the hihat
                               If == 2, Ride will be split out of the rest of the crash cymbals
@@ -1032,7 +1056,7 @@ def create_configs_dict(df):
 
     class_names = [x for x in list(df.columns) if '_' in x]
     num_features = 2*N_MELS if INCLUDE_FO_DIFFERENTIAL else N_MELS
-    num_channels = 3 if INCLUDE_LR_CHANNELS else 1
+    num_channels = 1  #TODO: Fix this with respect to spleeter integration
     month_date = date.today().strftime("-%b-%d")
 
     configs_dict = {'class_names_dict': {idx: val for idx, val in enumerate(class_names)},
@@ -1054,13 +1078,15 @@ def create_configs_dict(df):
                     'classification_dict' : {'clean_date' : CLEAN_DATA, 'keep_dynamics': KEEP_DYNAMICS, 'keep_bells': KEEP_BELLS,
                                              'keep_toms_seperate' : KEEP_TOMS_SEPARATE, 'hihat_classes' : HIHAT_CLASSES, 'cymbal_classes' : CYMBAL_CLASSES},
                     'month_date' : month_date,
-                    'training_dict' : {'train_data_aug' : TRAIN_DATA_AUG, 'train_epochs': TRAIN_EPOCHS}
+                    'training_dict' : {'train_data_aug' : TRAIN_DATA_AUG, 'train_epochs': TRAIN_EPOCHS, 'include_drum_stem': TRAIN_INCLUDE_DRUM_STEM,
+                                        'train_batch_size': TRAIN_BATCH_SIZE}
                     }
 
     return configs_dict
 # END OF MAT_df CREATION, CLEANING, ENCODING
 
 # START OF HUMAN-FACING UTILITY FUNCTIONS
+
 # END OF HUMAN-FACING UTILITY FUNCTIONS
 
 # START OF MODEL SAVING, LOADING, AND INFERENCE FUNCTIONS
@@ -1280,5 +1306,4 @@ def peaks_to_tab(detected_peaks, configs_dict):
     '''
 
     return None
-
 # END OF MODEL SAVING, LOADING, AND INFERENCE FUNCTIONS

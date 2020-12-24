@@ -15,14 +15,10 @@ import warnings
 import numpy as np
 import librosa as lb
 import tensorflow as tf
-import librosa.display
-
 import audiomentations as adm    # audiomentations package used for data augmentations
 
 from src.configs import *
 
-
-# defining the Dataset class
 class Dataset(object):
     '''
     Custom Dataset object class used to iterate through the training and validation data during model training
@@ -33,8 +29,9 @@ class Dataset(object):
         self.FullSet_memory = True if (FullSet_df is not None) and TRAIN_FULLSET_MEMORY else False
         self.subset_df = FullSet_df.loc[self.song_list].copy() if self.FullSet_memory else None   # makes a copy of the subset of the FullSet, still with the multi-index labels of the songs
         self.aug_comp = Dataset.create_composition() if self.data_aug else None
-        self.set_type = dataset_type
+        self.stem_dict = self.create_spleeter_configs_dict(dataset_type)
 
+        self.set_type = dataset_type
         self.classes = [x for x in list(self.subset_df.columns) if '_' in x]  if self.subset_df is not None else None  # assumes that the labels in the df are appropriately named ('_' only being introduced at encoded phase)
         self.num_classes = len(self.classes)
         self.num_songs = len(self.song_list)
@@ -60,7 +57,7 @@ class Dataset(object):
                     spectrogram, target, label_ref_df = self.preprocess_song(song_title)
 
                 self.song_count += 1
-                return spectrogram, target, label_ref_df
+                return spectrogram, target, label_ref_df, song_title
 
             else:   # we went through all the songs in the Dataset, so let's reset the object to its default state and randomize
                 self.song_count = 0
@@ -87,19 +84,27 @@ class Dataset(object):
 
             mono_song = lb.core.to_mono(song)
 
-            channels = [mono_song]              # channels is a list of either [mono_song] or [mono, L_song, R_song]
-            if INCLUDE_LR_CHANNELS:             # appending the LR channels to the channels variable
-                channels.append(song[0,:])
-                channels.append(song[1,:])
+            channels = [mono_song]              # channels is a list of audio channels describing the different mixes of the song
+
+            if self.stem_dict['use_drum_stem']:     # in the case where the drum only stem is somehow used
+                drums = np.vstack(song_df['drums slice'].to_numpy()).T   #  the stacked-back-to-normal numpy array containing the drum stack (channels, samples)
+                if self.stem_dict['include_drum_stem']:
+                    channels.append(lb.core.to_mono(drums))
+                if self.stem_dict['include_mixed_stem'] or self.stem_dict['replace_with_mixed_stem']:
+                    mixed_stem = song*(self.stem_dict['mixed_stem_weights'][0]) + drums*(self.stem_dict['mixed_stem_weights'][1])   # (song weight, drums weight)
+                    mixed_stem_mono = lb.core.to_mono(mixed_stem)
+                    if self.stem_dict['replace_with_mixed_stem']:
+                        channels[0] = mixed_stem_mono  # if train replace is true, replace the mono_song with mixed_stem
+                    else:
+                        channels.append(mixed_stem_mono) # logic to avoid adding the mixed stem AND replacing the mono_song
 
             # TODO: Get the correct sample rate (sr) from the song_info dictionary back in the creation of the MAT
                 # For now, assume all sr's are = 44100
             if self.data_aug:
                 channels = self.augment_audio_cp(channels, self.aug_comp, sr=SAMPLE_RATE)
 
-            # make spectrogram and augment if desired
+            # make spectrogram and augment spectrogram directly if desired
             spectrogram = self.create_spectrogram(channels, sr=SAMPLE_RATE)
-
             if self.data_aug:
                 spectrogram = self.augment_spectrogram(spectrogram)
 
@@ -160,6 +165,32 @@ class Dataset(object):
         aug_comp = adm.Compose(transforms = transform, shuffle = False, p = 1.0)
 
         return aug_comp
+
+    def create_spleeter_configs_dict(self, dataset_type):
+        '''
+        Creates the spleeter configs dictionary that holds all the bools/configs for implementing stem options of this dataset type
+
+        Args:
+            dataset_type [str]: 'train' or 'val'
+
+        Returns:
+            dict: a dictionary containing the different configuratin options for the current dataset type (gathered/organized from configs.py vars)
+        '''
+
+        use_drum_stem = TRAIN_USE_DRUM_STEM if dataset_type == 'train' else VAL_USE_DRUM_STEM
+        include_drum_stem = TRAIN_INCLUDE_DRUM_STEM if dataset_type == 'train' else VAL_INCLUDE_DRUM_STEM
+        include_mixed_stem = TRAIN_INCLUDE_MIXED_STEM if dataset_type == 'train' else VAL_INCLUDE_MIXED_STEM
+        mixed_stem_weights = TRAIN_MIXED_STEM_WEIGHTS if dataset_type == 'train' else VAL_MIXED_STEM_WEIGHTS
+        replace_with_mixed_stem = TRAIN_REPLACE_WITH_MIXED_STEM  if dataset_type == 'train' else VAL_REPLACE_WITH_MIXED_STEM
+
+        spleeter_configs = {'use_drum_stem' : use_drum_stem,
+                            'include_drum_stem' : include_drum_stem,
+                            'include_mixed_stem': include_mixed_stem,
+                            'mixed_stem_weights': mixed_stem_weights,
+                            'replace_with_mixed_stem': replace_with_mixed_stem
+                            }
+
+        return spleeter_configs
     # END Helper Functions
 
     # START Augmentation Functions
@@ -207,7 +238,7 @@ class Dataset(object):
         Augments the spectrogram with the currently coded spectrogram augmentation functions defined interally.
 
         Args:
-            spectrogram [np.array]: spectrogram of the curent song. Shape is either a n by m by 1 or n by m by 3
+            spectrogram [np.array]: spectrogram of the curent song. Shape is either a n by m by 1 or n by m by x
 
         Returns:
             np.array: spectrogram, either augmented or the original depending on the random triggering of the augmentations
@@ -262,7 +293,7 @@ class Dataset(object):
             sr [int]: sample rate of the current song
 
         Returns:
-            np.array: numpy array that is the spectrogram: either a n by m by 1 or n by m by 3 depending on the INCLUDE_LR_CHANNELS
+            np.array: numpy array that is the spectrogram: either a n by m by 1 or n by m by x depending on how many channels exist
         '''
 
         spectro_channels = [] # create either 1 spectrogram or 3 depending on how many channels are being used
@@ -283,7 +314,7 @@ class Dataset(object):
                     # spectro.shape = (2* n_mels, t)
             spectro_channels.append(spectro_norm)
 
-        spectrogram = np.stack(spectro_channels, axis = -1) # spectrogram channel dimension order is mono, L, R
+        spectrogram = np.stack(spectro_channels, axis = -1)
         # print(f'create_spectrogram: spectrogram.shape after ftd = {spectrogram.shape}')
 
         return spectrogram # spectrogram has shape of (n_mels (perhaps x2), t (determined by length of song and HOP_SIZE), n_channels (1 or 3) )
@@ -304,7 +335,7 @@ class Dataset(object):
         '''
 
         _, n_windows, n_channels = spectrogram.shape   # S.shape is (n_mels, t, n_channels), where t = number of frames/windows
-        labels_df = song_df.drop(columns = ['sample start', 'song slice'], errors = 'ignore')   # get a dataframe that only has the labels
+        labels_df = song_df.drop(columns = ['sample start', 'song slice', 'drums slice'], errors = 'ignore')   # get a dataframe that only has the labels
         class_names = labels_df.columns
         n_classes = len(class_names)
         targets = np.zeros((n_classes, n_windows, n_channels), dtype=int)  # initializes as all zeros in shape of (n_classes number of rows, n_frames number of columns)

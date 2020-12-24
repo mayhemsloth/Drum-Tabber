@@ -219,7 +219,7 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
         # Frequency branch: residual i block
         freq_branch = residual_i_block(freq_branch, filter_nums=(32,64), strides_arg = (1,1), activation = activ)
         # Frequency branch: MaxPool
-        freq_branch = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(freq_branch)
+        freq_branch = MaxPool2D(pool_size = (5,3), strides=None, padding = 'same')(freq_branch)
 
 
         # Time branch: the convs that are looking for features across wide range of time (wide filters)
@@ -227,7 +227,7 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
         # Time branch: residual i block
         time_branch = residual_i_block(time_branch, filter_nums=(32,64), strides_arg = (1,1), activation = activ)
         # Time branch: MaxPool
-        time_branch = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(time_branch)
+        time_branch = MaxPool2D(pool_size = (5,3), strides=None, padding = 'same')(time_branch)
 
 
 
@@ -244,7 +244,7 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
         # 1x1 conv the TimeFreq: "downsampling" the number of channels
         timefreq = conv2D_block(timefreq, 64, kernel_shape = (1,1), strides_arg = (1,1), activation = activ)
 
-        # Asymmetric Pool2D
+        # Pool2D
         timefreq = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(timefreq)
 
         # Flatten to prepare for Dense
