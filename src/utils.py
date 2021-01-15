@@ -149,18 +149,21 @@ class MusicAlignedTab(object):
     # END OF MAIN HIGH LEVEL INIT FUNCTIONS
 
     # START OF HUMAN-FACING CLASS UTILITY FUNCTIONS
-    def random_alignment_checker(self, drums_to_be_checked, num_buffer_slices, check_drums_only = False):
+    def alignment_checker(self, drums_to_be_checked, num_buffer_slices, times_to_be_checked=None, check_drums_only = False):
         """
-        Outputs a user-friendly way to check a random section of a song, to ensure that a music aligned tab is properly aligned
+        Outputs a user-friendly way to check a random or non-random section of a song, to ensure that a music aligned tab is properly aligned
 
         Args:
             drums_to_be_checked [list]: a list of strings that correspond to the master format chars that are being requested to be checked. One random, non-blank result will be checked
             num_buffer_slices [int]: number of slices that is shown *after* the one that is randomly chosen for inspection
+            times_to_be_checked [list]: Default None. If not none, a list of floats (0,1) that correspond to percentage times to check in the song. Useful for debugging a specific part of the song
             check_drums_only [bool]: Default False. If true, loads the 'drums slice' audio information instead of the full song audio information in 'song slice'
 
         Returns:
-            None (outputs to display)
+            None (outputs ipython music and text to display)
         """
+
+
         tk_label, measure_char, blank_char = TK_LABEL, MEASURE_CHAR, BLANK_CHAR # getter function
         MAT_df = self.MAT     # transferring the MAT_df info to MAT_df variable name so I don't have to change the function entirely
 
@@ -170,30 +173,51 @@ class MusicAlignedTab(object):
 
         audio_to_load = 'drums slice' if (self.include_drums and check_drums_only) else 'song slice'
 
+        def reconstruct_tab_and_audio(sel_index):
+            '''
+            Helper subfunction to reconstruct the tab and audio and then display it to the output
+            References other objects/variables that are not explicitly passed to the function
 
+            Args:
+                sel_index [int]:
+
+            Returns:
+                None (outputs ipython music and text to display)
+            '''
+            slices = []                                               # build up this array
+            for idx in range(num_buffer_slices):                      # append the buffer slices after
+                if (sel_index + idx) < len(MAT_df.index):             # ensures there are slices after (stops index slicing errors)
+                    slices.append(list(MAT_df.at[sel_index+idx, audio_to_load]))  # appends the next slices of the audio after the random selection
+
+            # displaying of tab
+            print(drop_MAT.iloc[int(sel_index):int(sel_index+num_buffer_slices), :].transpose()[::-1])  # print the tab corresponding to the audio in the correct orientation that we are used to seeing
+
+            # builder and displaying of audio
+            audio = []
+            for item in slices:
+                for item2 in item:
+                    audio.append(item2)
+            ipd.display(ipd.Audio(np.array(audio).T, rate = 44100))
+
+        # TODO: Combine these two for loop subcode into one subfunction to make it cleaner
         for drum in drums_possible:
             print("Sampling a " + str(drum) + " event for alignment check... Loading tab and audio slice")
 
             if (len(MAT_df[MAT_df[drum] != blank_char]) != 0):       # ensures there is a non-blank char in an existing column in the dataframe
-                selection = MAT_df[MAT_df[drum] != blank_char].sample()   # first we create a mask to filter only for a drum event, then sample
+                selection = MAT_df[MAT_df[drum] != blank_char].sample()   # first create a mask to filter only for a drum event, then sample
                 sel_index = selection.index[0]                            # grab index, which refers to the MAT_df index
-                slices = []                                               # build up this array
-                for idx in range(num_buffer_slices):                      # append the buffer slices after
-                    if (sel_index + idx) < len(MAT_df.index):             # ensures there are slices after (stops index slicing errors)
-                        slices.append(list(MAT_df.at[sel_index+idx, audio_to_load]))  # appends the next slices of the audio after the random selection
-
-                # displaying of tab
-                print(drop_MAT.iloc[int(sel_index):int(sel_index+num_buffer_slices), :].transpose()[::-1])  # print the tab corresponding to the audio in the correct orientation that we are used to seeing
-
-                # builder and displaying of audio
-                audio = []
-                for item in slices:
-                    for item2 in item:
-                        audio.append(item2)
-                audio_np = np.array(audio)
-                ipd.display(ipd.Audio(audio_np.T, rate = 44100))
+                reconstruct_tab_and_audio(sel_index)                    # doe the heavy lifting of reconstructing and displaying the tab and audio
             else:
-                print("No valid samples in " + str(drum) + " of that dataframe")
+                print(f"No valid samples in {drum} for that dataframe")
+
+        if times_to_be_checked != None:
+            for times in times_to_be_checked:
+                if 0 <= times < 1:
+                    print(f'Sampling the song starting at {times} through the song')
+                    sel_index = int(times*len(MAT_df.index))
+                    reconstruct_tab_and_audio(sel_index)
+                else:
+                    print(f"Please request a valid time as a fraction of the song. {times} is not between 0 and 1.")
 
         return None
 
@@ -422,12 +446,12 @@ class MusicAlignedTab(object):
             lb_drums = lb_drums.T
             assert lb_drums.shape == song.shape, 'Librosa-loaded song file and drums-only audio file have different shapes!'
             assert sample_rate == sr_drums, 'Sample rate of song is different from sample rate of drums-only audio file!'
-            # run the drums only audio through the slicing functions and the merge to the already existing DataFrame
+            # run the drums only audio through the slicing functions and then merge to the already existing DataFrame
             drum_slices_post_fdn = self.get_post_fdn_slice(lb_drums, fdn_sample_loc, sample_num, sample_delta, decimal_delta, triplets_bool, tab_df, fdn_row_index)
             drum_slices_pre_fdn = self.get_pre_fdn_slice(lb_drums, fdn_sample_loc, sample_num, sample_delta, decimal_delta)
             drum_slices_df = self.slices_into_df(drum_slices_pre_fdn, drum_slices_post_fdn, fdn_row_index, tab_len, fdn_sample_loc)
             drum_slices_df.rename(columns={'song slice': 'drums slice'}, inplace=True)
-            df_MAT = pd.concat([ df_MAT, drum_slices_df['drums slice'] ], axis=1) # final
+            df_MAT = pd.concat([ df_MAT, drum_slices_df['drums slice'] ], axis=1) # final new df_MAT, with the additional new drum slice column
 
         return df_MAT
 
@@ -461,13 +485,14 @@ class MusicAlignedTab(object):
                 # if the next tk column value is char t (the triplet signal), we are at the beginning of a triplet of some kind (Also do a check to ensure indexing error doesn't occur)
                 if ( row_index_counter < len(tab_df.index)-1) and (tab_df.at[row_index_counter+1, 'tk'] == quarter_chars[0]):
                     if tab_df.at[row_index_counter+1, 'tk'] + tab_df.at[row_index_counter+2, 'tk'] == quarter_chars: # quarter note trips case
-                        new_total_delta = (sample_delta+decimal_delta) * (8/3)    # changing the sample and decimal deltas
+                        triplet_multi_value = (8.0/3.0)
                     elif tab_df.at[row_index_counter+1, 'tk'] + tab_df.at[row_index_counter+2, 'tk'] == eighth_chars: # eighth note trips case
-                        new_total_delta = (sample_delta+decimal_delta) * (4/3)    # changing the sample and decimal deltas
+                        triplet_multi_value = (4.0/3.0)
                     elif tab_df.at[row_index_counter+1, 'tk'] + tab_df.at[row_index_counter+2, 'tk'] == sixteenth_chars: # sixteenth note trips case
-                        new_total_delta = (sample_delta+decimal_delta) * (2/3)     # changing the sample and decimal deltas
+                        triplet_multi_value = (2.0/3.0)
+                    new_total_delta = (sample_delta+decimal_delta) * triplet_multi_value  # changing the sample and decimal deltas
                     sample_delta_trip, decimal_delta_trip = (int(new_total_delta // 1), new_total_delta % 1) # change the sample_delta and decimal_delta to new values
-                    for index in range(3):  # do the following code three times. Copy of the other code, but using the new properly scaled triplet sample and decimal deltas
+                    for _ in range(3):  # do the following code three times. Copy of the other code, but using the new properly scaled triplet sample and decimal deltas
                         if decimal_counter <= 1:
                             decimal_counter += decimal_delta_trip
                             song_slices_post.append(song[postfdn_idx:postfdn_idx+sample_delta_trip])
@@ -940,6 +965,9 @@ def clean_labels(df):
     """CLEAN UP 7: Replace m-dashes used in place of the blank char (here, n dash) in every column"""
     for col in master_format_dict.values():
         replace_dict[col].update({'—' : blank_char})
+
+    """CLEAN UP 8: Replace the bells located on with blank char"""
+    replace_dict[hihat].update({'l': blank_char})
 
     df = df.replace(to_replace = replace_dict, value = None) # do the replacing using the replace_dict
 
