@@ -385,27 +385,27 @@ class MusicAlignedTab(object):
         """
         tk_label, measure_char, blank_char = TK_LABEL, MEASURE_CHAR, BLANK_CHAR # grab the special chars, we'll need the blank_char and measure_char
 
-        # TODO: Allow Tempo Changes into the set of tabs/music that can be processed
-        if alignment_info['tempo change'] == True: # checks if the tab has an tempo changes
-            print("This song has a tempo change, rejecting the tab for now.")
-            return tab_df    # If so, return the tab dataframe unchanged because we don't want to deal with that right now
-
-        triplets_bool = alignment_info['triplets']  # grabs the boolean of if this tab has ANY triplets in it
-
         sample_rate = song_info['frame rate']         # almost certainly 44100, but generalized if using some stupidly weird song/recording
         song_length = song_info['duration_seconds']   # length of song in seconds
-        BPM = alignment_info['BPM']                   # extract the BPM of the song (int)
-        fdn = alignment_info['first drum note onset'] # extract the seconds location of the beginning of the measure that contains the first drum note in the tab
+
+        triplets_bool = alignment_info['triplets']    # grabs the boolean of if this tab has ANY triplets in it
+        BPM = alignment_info['BPM']                   # extract the BPM of the song (int) (either the same throughout, of the first one present in a sectional BPM song)
+        fdn = alignment_info['first drum note onset'] # extract the seconds location of the beginning of the 16th note that contains the first drum note in the tab
+        if alignment_info['tempo change'] == True: # checks if the tab has an tempo changes
+            tempo_sections = alignment_info['tempo sections']  # grabs the tempo changes list, in the form of [ [num_16th_note_slices in previous section, next_section_new_BPM], [num2, BPM2], [num3, BPM3], etc. ]
+        else:
+            tempo_sections = []  # uses this as a flag for later functions to ignore sectional BPM code
 
         song = song.T                             # to utilize the code that I had written already to work with pydub, I need to transpose the librosa output here to be consistent
         sample_num = len(song)                    # the total number of samples in the song array, whether it's a 2D array (stereo) or not doesn't matter
         fdn_sample_loc = int(fdn*sample_rate)      # the starting sample number of the first drum note
-        sample_delta_out, remainder_delta = divmod(15*sample_rate,BPM)  # the amount of sample change for each 16th note grid, and the remainder, used to calculate
+        sample_delta_out, remainder_delta = divmod(15*sample_rate,BPM)  # the amount of sample change for each 16th note grid, and the remainder, used to calculate. 15 comes from
         sample_delta = int(sample_delta_out)        # ensures that the quotient is an integer, regardless of the BPM given: needed for later index slicing
         decimal_delta = float(remainder_delta/BPM)  # the decimal part of the sample_delta that was dropped. Useful for rectifying proper slice length later
 
-        # the main goal is to slice up song array with the correct length slices and attach them to the correct places in tab_df,
-        # where we are given an anchor point with first drum note (fdn) in seconds
+
+        ''' The main goal is to slice up song array with the correct length slices and attach them to the correct places in tab_df,
+            where we are given an anchor point with first drum note (fdn) in seconds'''
 
         # clean up the tab_df object
         tab_df = tab_df.drop(['note','garbage'], axis=1)    # remove the note and garbage columns of the tab dataframe
@@ -419,7 +419,7 @@ class MusicAlignedTab(object):
         tab_len = len(tab_df.index)     # total length of the drum tab dataframe
 
         # slice up raw audio AFTER the first drum note, correcting for potential misalignment due to lopping off remainder of sample delta, and handling the triplet case
-        song_slices_post_fdn = self.get_post_fdn_slice(song, fdn_sample_loc, sample_num, sample_delta, decimal_delta, triplets_bool, tab_df, fdn_row_index)
+        song_slices_post_fdn = self.get_post_fdn_slice(song, fdn_sample_loc, sample_num, sample_delta, decimal_delta, triplets_bool, tab_df, fdn_row_index, tempo_sections, sample_rate)
 
         # slice up raw audio BEFORE the first drum note, correcting for potential misalignment due to lopping off remainder of sample delta
         song_slices_pre_fdn = self.get_pre_fdn_slice(song, fdn_sample_loc, sample_num, sample_delta, decimal_delta)
@@ -447,7 +447,7 @@ class MusicAlignedTab(object):
             assert lb_drums.shape == song.shape, 'Librosa-loaded song file and drums-only audio file have different shapes!'
             assert sample_rate == sr_drums, 'Sample rate of song is different from sample rate of drums-only audio file!'
             # run the drums only audio through the slicing functions and then merge to the already existing DataFrame
-            drum_slices_post_fdn = self.get_post_fdn_slice(lb_drums, fdn_sample_loc, sample_num, sample_delta, decimal_delta, triplets_bool, tab_df, fdn_row_index)
+            drum_slices_post_fdn = self.get_post_fdn_slice(lb_drums, fdn_sample_loc, sample_num, sample_delta, decimal_delta, triplets_bool, tab_df, fdn_row_index, tempo_sections, sr_drums)
             drum_slices_pre_fdn = self.get_pre_fdn_slice(lb_drums, fdn_sample_loc, sample_num, sample_delta, decimal_delta)
             drum_slices_df = self.slices_into_df(drum_slices_pre_fdn, drum_slices_post_fdn, fdn_row_index, tab_len, fdn_sample_loc)
             drum_slices_df.rename(columns={'song slice': 'drums slice'}, inplace=True)
@@ -455,7 +455,7 @@ class MusicAlignedTab(object):
 
         return df_MAT
 
-    def get_post_fdn_slice(self, song, fdn_sample_loc, sample_num, sample_delta, decimal_delta, triplets_bool, tab_df, fdn_row_index):
+    def get_post_fdn_slice(self, song, fdn_sample_loc, sample_num, sample_delta, decimal_delta, triplets_bool, tab_df, fdn_row_index, tempo_sections, sample_rate):
         """
         Helper subfunction in combine_tab_and_song that outputs song slices post the first drum note
 
@@ -468,6 +468,8 @@ class MusicAlignedTab(object):
             triplets_bool [bool]: boolean that denotes the presence of triplets in the tab or not
             tab_df [Dataframe]: dataframe object of the tab in its current form
             fdn_row_index [int]: the index of the row of the first drum note in the tab_df
+            tempo_sections [list]: either None (with no sectional BPM changes), or a list of lists of the form [number_of_16th_note_slices in section before, BPM of the new section]
+            sample_rate [int]: sample rate of the song
 
         Returns:
             list: a list of song slices, where each are an np.array of samples (of roughly the same length, depending on the BPM and presence of triplets)
@@ -475,57 +477,94 @@ class MusicAlignedTab(object):
 
         quarter_chars, eighth_chars, sixteenth_chars = QUARTER_TRIPLET, EIGHTH_TRIPLET, SIXTEENTH_TRIPLET  # grabs the triplet characters
 
-        song_slices_post = []     # appending this array to build up the song slices
-        decimal_counter = 0           # counter needed for rectifying slice length
-        postfdn_idx = fdn_sample_loc  # sets the index counter to start at the first drum note sample location
+        ''' code from before used to extract sample_delta and decimal_delta
+        sample_delta_out, remainder_delta = divmod(15*sample_rate,BPM)  # the amount of sample change for each 16th note grid, and the remainder, used to calculate. 15 comes from
+        sample_delta = int(sample_delta_out)        # ensures that the quotient is an integer, regardless of the BPM given: needed for later index slicing
+        decimal_delta = float(remainder_delta/BPM)  # the decimal part of the sample_delta that was dropped. Useful for rectifying proper slice length later
+        '''
+
+        song_slices_post = []         # appending this array to build up the song slices
+        decimal_counter = 0.0         # counter needed for rectifying slice length
+        postfdn_idx = fdn_sample_loc   # sets the index counter to start at the first drum note sample location
         row_index_counter = fdn_row_index  # sets the row counter to start at the first drum note row location
+        tab_len = len(tab_df.index)        # the length of the tab (how many 16th note slices there are)
 
-        if triplets_bool == True:      # Completely split the cases of triplets or not
-            while postfdn_idx < (sample_num - sample_delta):    # ensures no indexing bounds error
-                # if the next tk column value is char t (the triplet signal), we are at the beginning of a triplet of some kind (Also do a check to ensure indexing error doesn't occur)
-                if ( row_index_counter < len(tab_df.index)-1) and (tab_df.at[row_index_counter+1, 'tk'] == quarter_chars[0]):
-                    if tab_df.at[row_index_counter+1, 'tk'] + tab_df.at[row_index_counter+2, 'tk'] == quarter_chars: # quarter note trips case
-                        triplet_multi_value = (8.0/3.0)
-                    elif tab_df.at[row_index_counter+1, 'tk'] + tab_df.at[row_index_counter+2, 'tk'] == eighth_chars: # eighth note trips case
-                        triplet_multi_value = (4.0/3.0)
-                    elif tab_df.at[row_index_counter+1, 'tk'] + tab_df.at[row_index_counter+2, 'tk'] == sixteenth_chars: # sixteenth note trips case
-                        triplet_multi_value = (2.0/3.0)
-                    new_total_delta = (sample_delta+decimal_delta) * triplet_multi_value  # changing the sample and decimal deltas
-                    sample_delta_trip, decimal_delta_trip = (int(new_total_delta // 1), new_total_delta % 1) # change the sample_delta and decimal_delta to new values
-                    for _ in range(3):  # do the following code three times. Copy of the other code, but using the new properly scaled triplet sample and decimal deltas
-                        if decimal_counter <= 1:
-                            decimal_counter += decimal_delta_trip
-                            song_slices_post.append(song[postfdn_idx:postfdn_idx+sample_delta_trip])
-                            postfdn_idx += sample_delta_trip
-                        else:
-                            decimal_counter = decimal_counter-1
-                            song_slices_post.append(song[postfdn_idx:postfdn_idx+sample_delta_trip+1])
-                            postfdn_idx += sample_delta_trip + 1
-                        row_index_counter += 1
+        if len(tempo_sections) == 0:                # in the case where we have no sectional BPMs (constant BPM instead).
+            tempo_sections.append([tab_len, 1000])  # simulates having one section that is the full length of the tab_df post-fdn index
+        else:
+            total_slices_from_sections = 0          # adding a section that represents the remaining of the song. Due to how I set up the code below, this is needed
+            for tempo_section in tempo_sections:
+                total_slices_from_sections += tempo_section[0]
+            tempo_sections.append([tab_len - total_slices_from_sections,1000])
 
-                # non-triplet tk char case, but in a triplet-containing tab
-                else:     # we are in a non-triplet case, so we use the previously working code, but remember to increment our row_index_counter
+        # treat every song as either 1 section of constant BPM, or using the tempo sections to split up the song into different tempo parts.
+        # either way, the passed sample_delta and decimal_delta are assumed to be the valid BPM representation for the first (and perhaps only) section
+        for section_num, tempo_section in enumerate(tempo_sections):   # with constant BPM, this loops through once [num_slices, BPM_of_next_section]
+            section_slice_counter = 0
+            n_section_slices = tempo_section[0]
+            if section_num == 0:
+                n_sections_slices = n_section_slices - fdn_row_index    # for first section, sets the total number of section slices correctly. Our starting point is fdn row, not start of song
+
+            if triplets_bool == True:      # Completely split the cases of triplets or not
+                while postfdn_idx < (sample_num - sample_delta):    # ensures no indexing bounds error
+                    # if the next tk column value is char t (the triplet signal), we are at the beginning of a triplet of some kind (Also do a check to ensure indexing error doesn't occur)
+                    if ( row_index_counter < tab_len-1) and (tab_df.at[row_index_counter+1, 'tk'] == quarter_chars[0]):
+                        if tab_df.at[row_index_counter+1, 'tk'] + tab_df.at[row_index_counter+2, 'tk'] == quarter_chars: # quarter note trips case
+                            triplet_multi_value = (8.0/3.0)
+                        elif tab_df.at[row_index_counter+1, 'tk'] + tab_df.at[row_index_counter+2, 'tk'] == eighth_chars: # eighth note trips case
+                            triplet_multi_value = (4.0/3.0)
+                        elif tab_df.at[row_index_counter+1, 'tk'] + tab_df.at[row_index_counter+2, 'tk'] == sixteenth_chars: # sixteenth note trips case
+                            triplet_multi_value = (2.0/3.0)
+                        new_total_delta = (sample_delta+decimal_delta) * triplet_multi_value  # changing the sample and decimal deltas
+                        sample_delta_trip, decimal_delta_trip = (int(new_total_delta // 1), new_total_delta % 1) # change the sample_delta and decimal_delta to new values
+                        for _ in range(3):  # do the following code three times. Copy of the other code, but using the new properly scaled triplet sample and decimal deltas
+                            if decimal_counter <= 1:
+                                decimal_counter += decimal_delta_trip
+                                song_slices_post.append(song[postfdn_idx:postfdn_idx+sample_delta_trip])
+                                postfdn_idx += sample_delta_trip
+                            else:
+                                decimal_counter = decimal_counter-1
+                                song_slices_post.append(song[postfdn_idx:postfdn_idx+sample_delta_trip+1])
+                                postfdn_idx += sample_delta_trip + 1
+                            row_index_counter += 1
+                            section_slice_counter += 1
+
+                    # non-triplet tk char case, but in a triplet-containing tab
+                    else:     # we are in a non-triplet case, so we use the previously working code, but remember to increment our row_index_counter
+                        if decimal_counter <= 1:                        # we are in a case where we don't have to account for the decimal
+                            decimal_counter += decimal_delta            # add the decimal delta to the decimal counter
+                            song_slices_post.append(song[postfdn_idx : postfdn_idx+sample_delta])   # grab the correct slice
+                            postfdn_idx += sample_delta                # increment the index counter
+                        else:    # in the case of decimal_counter being over 1
+                            decimal_counter = decimal_counter-1        # removing the 1
+                            song_slices_post.append(song[postfdn_idx : postfdn_idx+sample_delta+1])   # grab the correct slice, with the 1
+                            postfdn_idx += sample_delta+1               # increment the index counter
+                        row_index_counter += 1                     # increment the row index counter (used for triplets cases)
+                        section_slice_counter += 1                 # increment the section slice counter
+
+                    if section_slice_counter == n_section_slices:   # added enough sections for this BPM, stop adding slices
+                        break   # breaks the while loop of adding slices
+
+
+            else:    # We are not in the song-having-triplets case, so this code works for non-triplet case
+                while postfdn_idx < (sample_num - sample_delta):    # ensures no indexing bounds error
                     if decimal_counter <= 1:                        # we are in a case where we don't have to account for the decimal
                         decimal_counter += decimal_delta            # add the decimal delta to the decimal counter
                         song_slices_post.append(song[postfdn_idx : postfdn_idx+sample_delta])   # grab the correct slice
                         postfdn_idx += sample_delta                # increment the index counter
-                    else:    # in the case of decimal_counter being over 1
+                    else:                                          # in the case of decimal_counter being over 1
                         decimal_counter = decimal_counter-1        # removing the 1
                         song_slices_post.append(song[postfdn_idx : postfdn_idx+sample_delta+1])   # grab the correct slice, with the 1
-                        postfdn_idx += sample_delta+1               # increment the index counter
-                    row_index_counter += 1                     # increment the row index counter (used for triplets cases)
+                        postfdn_idx += sample_delta+1                # increment the index counter
+                    section_slice_counter += 1                      # increment the section slice counter
+                    if section_slice_counter == n_section_slices:   # added enough sections for this BPM, stop adding slices
+                        break   # breaks the while loop of adding slices
 
-
-        else:    # We are not in the triplet cases, so this code works for non-triplet case
-            while postfdn_idx < (sample_num - sample_delta):    # ensures no indexing bounds error
-                if decimal_counter <= 1:                        # we are in a case where we don't have to account for the decimal
-                    decimal_counter += decimal_delta            # add the decimal delta to the decimal counter
-                    song_slices_post.append(song[postfdn_idx : postfdn_idx+sample_delta])   # grab the correct slice
-                    postfdn_idx += sample_delta                # increment the index counter
-                else:    # in the case of decimal_counter being over 1
-                    decimal_counter = decimal_counter-1        # removing the 1
-                    song_slices_post.append(song[postfdn_idx : postfdn_idx+sample_delta+1])   # grab the correct slice, with the 1
-                    postfdn_idx += sample_delta+1                # increment the index counter
+            # out of the section_slice_counter while loop, set up the next sample_delta and decimal_delta using information from tempo_section
+            next_BPM = tempo_section[1]
+            sample_delta_out, remainder_delta = divmod(15*sample_rate,next_BPM)  # the amount of sample change for each 16th note grid, and the remainder, used to calculate.
+            sample_delta = int(sample_delta_out)        # ensures that the quotient is an integer, regardless of the BPM given: needed for later index slicing
+            decimal_delta = float(remainder_delta/next_BPM)  # the decimal part of the sample_delta that was dropped. Useful for rectifying proper slice length later
 
         return song_slices_post
 
