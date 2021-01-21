@@ -1,15 +1,27 @@
 # Drum-Tabber
 
-This repository is for an automatic drum transcription project created by me. The main purpose of the project is to develop and display my data science and machine learning skills and knowledge with a challenging, lofty goal. I am interested in creating an automatic drum tabber by using real music with labeled drums as a training set. The training set and labels would be derived from currently existing, freely available drum tabulatures, aligned to the music properly such that it can assign a tiny slice of that song with a label. After that, a convolutional neural network architecture is used to train a model on songs' spectrograms to predict the drum onset events in a song. Note that the goal of the project is not to produce unique drum rhythms, but only to classify drums in a song. 
+This repository is for an automatic drum transcription project created by me. The main purpose of the project is to develop and display my data science and machine learning skills and knowledge with a challenging, lofty goal. I am interested in creating an automatic drum tabber by using real music with labeled drum events via tabs as a training set. The training set and labels would be derived from currently existing, freely available drum tabulatures (and tabs that I produce myself), aligned to the music properly such that a tiny slice of the song is assigned with a label, resulting in each drum event having a time associated with its onset. After that, a convolutional neural network architecture, and perhaps other architectures like attention-based transformer models, is used to train a model on songs' spectrograms to predict the drum onset events in a song. Note that the goal of the project is not to produce unique drum rhythms, but only to classify drums in a song. 
+
+**I currently do not have a decent working model to show off.** As of 1/21/21, my training set is up to 30 songs, with the ability to pre-process songs with triplets and sectional tempo changes (as long as the proper alignment information is provided).  
+
+My [main development notebook](https://github.com/mayhemsloth/Drum-Tabber/blob/master/Drum-Tabber-Google-Colab-Notebook.ipynb) contains my most recent, up-to-date code for development, testing and training models. 
 
 If you are a random visitor and are curious about my work, you can check out the Jupyter Notebooks. The project notebook order is the following:
-* Drum Tab Project Overview
-* Aligning Drum Tabs with Music Notebook
-* Batch Processing and Classification Notebook
-* Training Set Preparation and Explanation Notebook
-* TensorFlow Neural Network Model Building
+* [Drum Tab Project Overview](https://github.com/mayhemsloth/Drum-Tabber/blob/master/Jupyter-Notebooks/Drum-Tab-Project-Overview.ipynb)
+    * Motivation, background, previous datasets, proposed dataset ideas
+* [Aligning Drum Tabs with Music Notebook](https://github.com/mayhemsloth/Drum-Tabber/blob/master/Jupyter-Notebooks/Aligning-Drum-Tabs-with-Music-Notebook.ipynb)
+    * Summary of challenges working with tabs, then my development of music-tab alignment code
+* [Batch Processing and Classification Notebook](https://github.com/mayhemsloth/Drum-Tabber/blob/master/Jupyter-Notebooks/Batch-Processing-and-Classification-Notebook.ipynb)
+    * Batch processing of all training set songs, cleaning of processed tabs, and configurations for classification options
+* [Training Set Preparation and Explanation Notebook](https://github.com/mayhemsloth/Drum-Tabber/blob/master/Jupyter-Notebooks/Training-Set-Preparation-And-Explanation-Notebook.ipynb)
+    * Log mel-spectrogram overview, and development of input and target creation code that ultimately is entirely rewritten later
+* [Audio Data Augmentation Development Notebook](https://github.com/mayhemsloth/Drum-Tabber/blob/master/Jupyter-Notebooks/Audio-Data-Augmentation-Development-Notebook.ipynb)
+    * Summary of audio augments, then exploring options for augmenting audio data, deciding on using [audiomentations](https://github.com/iver56/audiomentations) for most audio augmentations but custom coding some other ones later
+* [TensorFlow Neural Network Model Building](https://github.com/mayhemsloth/Drum-Tabber/blob/master/Jupyter-Notebooks/TensorFlow-Neural-Network-Model-Building.ipynb)
+    * Early exploration of TF model building and a custom training loop. Not much here because I moved on to coding in .py files. 
 
-I currently do not have a working model to show off. 
+
+
 
 August 12th Update: 
 After taking a break from this project to work on a different machine learning neural network based project, I've learned quite a few things from that project that I can apply to this Drum-Tabber project. Here are the things I believe I want to change. 
