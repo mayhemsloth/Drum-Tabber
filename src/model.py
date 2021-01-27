@@ -263,7 +263,3 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
         return None
 
     return tf.keras.Model(inputs = input_layer, outputs = output)
-
-'''
-: need a compute_loss function
-'''

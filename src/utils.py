@@ -1005,7 +1005,7 @@ def clean_labels(df):
     for col in master_format_dict.values():
         replace_dict[col].update({'—' : blank_char})
 
-    """CLEAN UP 8: Replace the bells located on with blank char"""
+    """CLEAN UP 8: Replace the "winter bells" sound located on hihat with blank char"""
     replace_dict[hihat].update({'l': blank_char})
 
     df = df.replace(to_replace = replace_dict, value = None) # do the replacing using the replace_dict

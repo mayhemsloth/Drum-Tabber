@@ -101,7 +101,7 @@ class Dataset(object):
             # TODO: Get the correct sample rate (sr) from the song_info dictionary back in the creation of the MAT
                 # For now, assume all sr's are = 44100
             if self.data_aug:
-                channels = self.augment_audio_cp(channels, self.aug_comp, sr=SAMPLE_RATE)
+                channels = self.augment_audio_cp(channels, self.aug_comp, sr=SAMPLE_RATE)    # augment_audio_cp means class-preserving. The audio isn't significantly changed to change the class labels
 
             # make spectrogram and augment spectrogram directly if desired
             spectrogram = self.create_spectrogram(channels, sr=SAMPLE_RATE)
@@ -117,7 +117,7 @@ class Dataset(object):
         # TODO: Implement the case where the FullSet_memory == False and we need to load the songs individually everytime
         else:     # case of not keeping FullSet in memory
             print('FULLSET_MEMORY == FALSE NOT IMPLEMENTED YET. EVERYTHING ELSE WILL NOT FUNCTION PROPERLY')
-            spectrogram, target, label_ref_df = None, None
+            spectrogram, target, label_ref_df = None, None, None
 
         return spectrogram, target, label_ref_df
 
@@ -304,7 +304,8 @@ class Dataset(object):
             if SHIFT_TO_DB:
                 spectro = lb.power_to_db(spectro, ref = np.max)
             # manual normalize of the current spectro channel
-            spectro_norm = (spectro - spectro.mean())/spectro.std()
+            #spectro_norm = (spectro - spectro.mean())/spectro.std()
+            spectro_norm = (spectro + 80)/80     # normalize to [0,1] usng the fact that the output of lb.power_to_db is [-80,0]
             if INCLUDE_FO_DIFFERENTIAL:
                 spectro_ftd = lb.feature.delta(data = spectro, width = 9, order=1, axis = -1)    # calculate the first time derivative of the spectrogram. Uses 9 frames to calculate
                     # spectro_f(irst)t(ime)d(erivative).shape = (n_mels, t) SAME AS spectro
