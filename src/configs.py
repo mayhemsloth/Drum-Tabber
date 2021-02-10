@@ -16,9 +16,9 @@ FMAX        = 10000   # in Hz, the maximum frequency that the mel filter-bank (s
 INCLUDE_FO_DIFFERENTIAL = False  # keeps the first order differential over time of the spectrograms
 NEGATIVE_WINDOW_FRACTION = 0.1   # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
 POSITIVE_WINDOW_FRACTION = 0.15   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
-MODEL_TYPE = 'TimeFreq-CNN' # the model type desired to build. Possible choices are 'Context-CNN', 'TimeFreq=CNN'
-N_CONTEXT_PRE  = 15    # the number of context windows included before the target window in any context model type
-N_CONTEXT_POST = 15    # the number of context windows included after the target window in any context model type
+MODEL_TYPE = 'TL-DenseNet121'    # the model type desired to build. Possible choices are 'Context-CNN', 'TimeFreq-CNN', 'TL-DenseNet121/169/201'
+N_CONTEXT_PRE  = 16    # the number of context windows included before the target window in any context model type
+N_CONTEXT_POST = 16    # the number of context windows included after the target window in any context model type
 TOLERANCE_WINDOW = 15  # in ms, the amount of time that is allowable left and right of sample labelled as correct. Note that a 200 BPM 16th note grid corresponds to 75 ms duration. 150 BPM is 100 ms duration
 SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatever it is in when you get the output from lb.melspectrogram
 
@@ -43,8 +43,9 @@ TRAIN_LOGDIR                   = 'logs'
 TRAIN_CHECKPOINTS_FOLDER       = 'models/checkpoints'
 TRAIN_FROM_CHECKPOINT          = False
 TRAIN_CHECKPOINT_MODEL_NAME    = ''
+TRAIN_FINE_TUNE                = True
 # Spleeter train options
-TRAIN_USE_DRUM_STEM           = True      # if true, use the drum stem slices from the MAT_df to help with training the model
+TRAIN_USE_DRUM_STEM           = False      # if true, use the drum stem slices from the MAT_df to help with training the model
 TRAIN_INCLUDE_DRUM_STEM       = True     # if true, uses spleeter to separate out the drum stem and then append it as an additional channel
 TRAIN_INCLUDE_MIXED_STEM      = False     # if true, uses spleeter to separate out the drum stem and then mix it with original mix to accentuate drums, then append as additional channel
 TRAIN_MIXED_STEM_WEIGHTS      = (0.5,0.5) # the weights multiplied by the full mix and drum mix respectively when added together
@@ -54,9 +55,9 @@ TRAIN_REPLACE_WITH_MIXED_STEM = False      # if true, replaces the normal full s
 
 TRAIN_BATCH_SIZE      = 256      # the number of individual images (slices of the spectrogram: windows and their contexts) before the model is updated
 TRAIN_LR_INIT         = 1e-4
-TRAIN_LR_END          = 1e-6
-TRAIN_WARMUP_EPOCHS   = 2
-TRAIN_EPOCHS          = 50
+TRAIN_LR_END          = 5e-6
+TRAIN_WARMUP_EPOCHS   = 1
+TRAIN_EPOCHS          = 20
 
 
 # augmentation options

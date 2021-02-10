@@ -1146,7 +1146,7 @@ def create_configs_dict(df):
                                              'keep_toms_seperate' : KEEP_TOMS_SEPARATE, 'hihat_classes' : HIHAT_CLASSES, 'cymbal_classes' : CYMBAL_CLASSES},
                     'month_date' : month_date,
                     'training_dict' : {'train_data_aug' : TRAIN_DATA_AUG, 'train_epochs': TRAIN_EPOCHS, 'include_drum_stem': TRAIN_INCLUDE_DRUM_STEM,
-                                        'train_batch_size': TRAIN_BATCH_SIZE}
+                                        'train_batch_size': TRAIN_BATCH_SIZE, 'train_fine_tune': TRAIN_FINE_TUNE}
                     }
 
     return configs_dict
@@ -1350,9 +1350,10 @@ def detect_peaks(prediction, peak_pick_parameters = {'pre_max' : 2, 'post_max' :
 
     for idx in range(n_classes):  # lb.util.peak_pick can accept only 1D data, so must use for loop to go through each class one at a time
         peaks_idx = lb.util.peak_pick(x = prediction[:,idx],
-                                    pre_max = peak_pick_parameters['pre_max'], post_max = peak_pick_parameters['post_max'],
-                                    pre_avg = peak_pick_parameters['pre_avg'], post_avg =  peak_pick_parameters['post_avg'],
-                                    delta =  peak_pick_parameters['delta'], wait =  peak_pick_parameters['wait'])
+                                      pre_max = peak_pick_parameters['pre_max'], post_max = peak_pick_parameters['post_max'],
+                                      pre_avg = peak_pick_parameters['pre_avg'], post_avg =  peak_pick_parameters['post_avg'],
+                                      delta =  peak_pick_parameters['delta'], wait =  peak_pick_parameters['wait']
+                                      )
         if len(peaks_idx) != 0:   # ensures no error occurs if no peaks are found and peak_pick returns an empty set (which means all peaks are 0, already)
             detected_peaks[peaks_idx, idx] = 1    # assign 1 at sample_idx where peak is detected, all other values are 0
 

@@ -286,7 +286,6 @@ class Dataset(object):
     def create_spectrogram(self, channels, sr):
         '''
         Makes a spectrogram based on the song channels given and the model options from the configs.py file
-        Additionally, normalizes the spectrogram (and ftd) after creating it
 
         Args:
             channels [list]: list of np.arrays that are the samples
@@ -296,27 +295,23 @@ class Dataset(object):
             np.array: numpy array that is the spectrogram: either a n by m by 1 or n by m by x depending on how many channels exist
         '''
 
-        spectro_channels = [] # create either 1 spectrogram or 3 depending on how many channels are being used
+        spectro_channels = [] # create either spectrograms based on the number of channels (different versions of the same song)
         for channel in channels:
             spectro = lb.feature.melspectrogram(np.asfortranarray(channel), sr=sr, n_fft = WINDOW_SIZE, hop_length = HOP_SIZE,
                                                 center = False, n_mels = N_MELS, fmax=FMAX) # numpy array of shape (n_mels, t)
             # print(f'create_spectrogram: spectro.shape = {spectro.shape}')
             if SHIFT_TO_DB:
-                spectro = lb.power_to_db(spectro, ref = np.max)
-            # manual normalize of the current spectro channel
-            #spectro_norm = (spectro - spectro.mean())/spectro.std()
-            spectro_norm = (spectro + 80)/80     # normalize to [0,1] usng the fact that the output of lb.power_to_db is [-80,0]
+                spectro = lb.power_to_db(spectro, ref = np.max)   # range of [-80,0] values
             if INCLUDE_FO_DIFFERENTIAL:
                 spectro_ftd = lb.feature.delta(data = spectro, width = 9, order=1, axis = -1)    # calculate the first time derivative of the spectrogram. Uses 9 frames to calculate
                     # spectro_f(irst)t(ime)d(erivative).shape = (n_mels, t) SAME AS spectro
                 # manual normalize of current spectro_ftd
                 spectro_ftd_norm = (spectro_ftd - spectro_ftd.mean())/spectro_ftd.std()
-                spectro_norm = np.concatenate([spectro_norm, spectro_ftd_norm], axis = 0)    # first time derivative attached at end of normal log mel spectrogram (n_mels of spectro, then n_mels of ftd)
+                spectro = np.concatenate([spectro, spectro_ftd_norm], axis = 0)    # first time derivative attached at end of normal log mel spectrogram (n_mels of spectro, then n_mels of ftd)
                     # spectro.shape = (2* n_mels, t)
-            spectro_channels.append(spectro_norm)
+            spectro_channels.append(spectro)
 
         spectrogram = np.stack(spectro_channels, axis = -1)
-        # print(f'create_spectrogram: spectrogram.shape after ftd = {spectrogram.shape}')
 
         return spectrogram # spectrogram has shape of (n_mels (perhaps x2), t (determined by length of song and HOP_SIZE), n_channels (1 or 3) )
 

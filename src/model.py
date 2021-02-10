@@ -14,6 +14,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Input, ReLU, LeakyReLU, Dropout, Flatten, Concatenate, Add
 from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, MaxPool2D, ZeroPadding2D, AveragePooling2D
+from tensorflow.keras.applications.densenet import DenseNet121, DenseNet169, DenseNet201
 
 from src.configs import *
 
@@ -256,6 +257,30 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
 
         # FC Dense sigmoid activation
         output = Dense(n_classes, activation = 'sigmoid')(output)
+
+    elif 'TL' in MODEL_TYPE: # if choosing one of the transfer learning (TL) model architectures
+
+        if 'DenseNet' in MODEL_TYPE:  # if choosing one of the DenseNet model architectures (using TL)
+            assert n_features >= 32, 'DenseNet requires dimensions of at least 32x32, please increase the problem dimension'
+            assert N_CONTEXT_PRE+1+N_CONTEXT_POST >= 32, 'DenseNet requires dimensions of at least 32x32, please increase the problem dimension'
+            input_layer = Input(shape = (n_features, (N_CONTEXT_PRE+1+N_CONTEXT_POST), 3, ), dtype = 'float32')  # creates a None in first dimension for the batch size
+
+            if 'DenseNet121' in MODEL_TYPE:
+                dn_model = DenseNet121(include_top = False, input_tensor = input_layer, pooling = None)
+            elif 'DenseNet169' in MODEL_TYPE:
+                dn_model = DenseNet169(include_top = False, input_tensor = input_layer, pooling = None)
+            elif 'DenseNet201' in MODEL_TYPE:
+                dn_model = DenseNet201(include_top = False, input_tensor = input_layer, pooling = None)
+
+            for layer in dn_model.layers:
+                layer.trainable = False    # sets parameters to False to train only the top/last layer of the network (added after this)
+                if TRAIN_FINE_TUNE and ('conv5' in layer.name):
+                    layer.trainable = True    # fine-tuning the last conv block layer in DenseNet
+
+            output = Flatten()(dn_model.layers[-1].output)
+            output = Dense(128, activation = activ)(output)
+            output = Dense(n_classes, activation = 'sigmoid')(output)    # FC Dense Sigmoid activation
+
 
     # TODO: handle the other model type cases
     else:

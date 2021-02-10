@@ -1,2 +1,2 @@
-model_checkpoint_path: "TimeFreq-CNN-Jan-26"
-all_model_checkpoint_paths: "TimeFreq-CNN-Jan-26"
+model_checkpoint_path: "TL-DenseNet121-Feb-09"
+all_model_checkpoint_paths: "TL-DenseNet121-Feb-09"

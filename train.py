@@ -123,8 +123,24 @@ def main(custom_model_name = None):
 
         n_features, n_windows = spectrogram.shape
 
+        ''' NORMALIZE SPECTROGRAMS '''
+        if model_type in ['TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
+            if INCLUDE_FO_DIFFERENTIAL:
+                # TODO: normalize the top half of the n_features dimension. Bottom half is already normalized via the FO_DIFF concatenation step
+                pass
+            elif SHIFT_TO_DB:    # not including the fto differential, so just normalize the spectrogram directly if we shifted to db
+                spectrogram = (spectrogram + 40)/40  # DenseNet requires "pixel values" [-1,1], and spectrogram was [-80,0]
+
+        elif model_type in ['Context-CNN', 'TimeFreq-CNN']:
+            if INCLUDE_FO_DIFFERENTIAL:
+                # TODO: normalize the top half of the n_features dimension. Bottom half is already normalized via the FO_DIFF concatenation step
+                pass
+            elif SHIFT_TO_DB:
+                spectrogram = (spectrogram + 80)/80   # Change to [0,1] values
+
+        ''' RESHAPE TO INPUT ARRAY '''
         # TODO: Finish the other model type options when they become available
-        if model_type in ['Context-CNN', 'TimeFreq-CNN']:
+        if model_type in ['Context-CNN', 'TimeFreq-CNN', 'TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
 
             pre_context, post_context = N_CONTEXT_PRE, N_CONTEXT_POST
             input_width = pre_context + 1 + post_context
@@ -143,7 +159,15 @@ def main(custom_model_name = None):
                 else:    # in a "normal" middle window where you slice into the spectrogram normally
                     input_array[idx, :,:] = spectrogram[:, idx-pre_context : idx+post_context+1]
 
-            return input_array
+            # create the correct number of channels to be made for the input array stacking
+            if model_type in ['Context-CNN', 'TimeFreq-CNN']:
+                channel_number = 1
+            elif model_type in ['TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
+                channel_number = 3  # simulating RGB color channels
+
+            final_input_array = np.stack([input_array for _ in range(channel_number)], axis=-1)  # create the channel dimension for input
+
+        return final_input_array
 
     def target_to_target_array(target, model_type):
         '''
@@ -160,7 +184,7 @@ def main(custom_model_name = None):
         n_classes, n_windows = target.shape
 
         # TODO: Finish the other model type options when they become available
-        if model_type in ['Context-CNN', 'TimeFreq-CNN']:
+        if model_type in ['Context-CNN', 'TimeFreq-CNN',  'TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
             target_array = target.T  # only need the transpose because the target array is 2D (n_classes, n_windows)
             # and we want (n_windows, n_classes)
 
@@ -239,7 +263,7 @@ def main(custom_model_name = None):
             tf.Tensor: Tensor of the same shape as logits with component-wise losses calculated
         '''
 
-        if model_type in ['Context-CNN', 'TimeFreq-CNN']:
+        if model_type in ['Context-CNN', 'TimeFreq-CNN',  'TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
             #losses = tf.nn.sigmoid_cross_entropy_with_logits(labels = target_array.astype(np.float32), logits = prediction)
             losses = tf.nn.weighted_cross_entropy_with_logits(labels = target_array.astype(np.float32),
                                                               logits = prediction,
@@ -296,7 +320,7 @@ def main(custom_model_name = None):
         for channel in range(n_channels):
 
             # converts the current spectrogram into the correct input array
-            input_array = np.expand_dims(spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE), axis=-1) # adding a "channel" dim at the end so that it is 4D for the model input
+            input_array = spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE) # exactly the current output for input into model. Check function for dimensions of input_array
             target_array = target_to_target_array(target[:,:,channel], MODEL_TYPE)
             num_examples = input_array.shape[0]    # total number of examples in this song/channel
 
@@ -351,7 +375,7 @@ def main(custom_model_name = None):
 
             channel_loss = channel_loss / num_updates
             channel_loss_by_class = channel_loss_by_class / num_updates
-            ''' THESE STEPS ARE SIGNIFICANT TIME SINKS DUE TO WRITING TO DISK COMMENT THEM OUT FOR NOW
+            ''' THESE STEPS ARE SIGNIFICANT TIME SINKS DUE TO WRITING TO DISK. COMMENT THEM OUT FOR NOW
             # write a bunch of information to the current writer_for_step, including channel loss by class
             with writer_for_step.as_default():
                 tf.summary.scalar('channel_loss/{}/{}/all_classes'.format(song_name,channel), channel_loss, step = epoch)
