@@ -313,7 +313,8 @@ def main(custom_model_name = None):
             training_update = False
             writer_for_step = val_writer
 
-        song_loss = 0.0
+        song_loss = 0.0                       # the total running song loss for all classes
+        song_loss_by_class = tf.zeros(shape=len(class_names))  # saves all the losses split out by class for entire song
         error_df_list = []
 
         # treat each channel individually as a single "song"
@@ -333,7 +334,7 @@ def main(custom_model_name = None):
             # making an empty array to concatenate later for building up the error metrics array after converting to peaks
             prediction_list = []
 
-            # go through batches and update model
+            # go through batches, make predictions, calculate losses, calculate gradients, and update the model
             for idx in range(num_updates):
                 start_batch_slice = idx*batch_size
                 end_batch_slice = (idx+1)*batch_size
@@ -359,6 +360,7 @@ def main(custom_model_name = None):
 
                     batch_loss = tf.math.reduce_mean(losses)   # gets the average of all the classes, reduces down to scalar
                     batch_loss_by_class = tf.math.reduce_mean(losses, axis=0)  # gets the average of each class for the batch
+
                     if set_type == 'train':   # if we are in a train set, update the model
                         # apply gradients to update the model, the backward pass
                         gradients = tape.gradient(batch_loss, drum_tabber.trainable_variables)
@@ -373,9 +375,9 @@ def main(custom_model_name = None):
             chan_error_df = compute_error_metrics(full_chan_peaks, label_ref_df, MODEL_TYPE, TOLERANCE_WINDOW, HOP_SIZE, SAMPLE_RATE)
             error_df_list.append(chan_error_df)
 
-            channel_loss = channel_loss / num_updates
-            channel_loss_by_class = channel_loss_by_class / num_updates
-            ''' THESE STEPS ARE SIGNIFICANT TIME SINKS DUE TO WRITING TO DISK. COMMENT THEM OUT FOR NOW
+            channel_loss = channel_loss / num_updates                     # normalize the channel_loss by number of total batches done
+            channel_loss_by_class = channel_loss_by_class / num_updates   # normalize by total batches done
+            ''' THESE STEPS BELOW ARE SIGNIFICANT TIME SINKS DUE TO WRITING TO DISK. COMMENT THEM OUT FOR NOW
             # write a bunch of information to the current writer_for_step, including channel loss by class
             with writer_for_step.as_default():
                 tf.summary.scalar('channel_loss/{}/{}/all_classes'.format(song_name,channel), channel_loss, step = epoch)
@@ -385,9 +387,11 @@ def main(custom_model_name = None):
             '''
 
             song_loss += channel_loss
+            song_loss_by_class += channel_loss_by_class
 
-        error_df = sum(error_df_list).copy() # the sum calls the + operator, which is overloaded for DataFrames to add element-wise values!
         song_loss = song_loss/n_channels
+        song_loss_by_class = song_loss_by_class/n_channels
+        error_df = sum(error_df_list).copy() # the sum calls the + operator, which is overloaded for DataFrames to add element-wise values!
 
         # after the full song+channels is done, update learning rate, using warmup and cosine decay. Additionally, write summary data
         if set_type == 'train':
@@ -399,14 +403,13 @@ def main(custom_model_name = None):
                     (1 + tf.cos( ( (global_steps - warmup_steps) / (total_steps - warmup_steps) ) * np.pi)))
             optimizer.lr.assign(lr.numpy())
             # write summary data
-            # TODO: understand what the writer TF is doing better with respect to TensorBoard
             with train_writer.as_default():
                 tf.summary.scalar("lr", optimizer.lr, step=global_steps)
                 tf.summary.scalar("song_loss", song_loss, step=global_steps)
                 tf.summary.scalar('song_loss/{}'.format(song_name), song_loss, step=epoch)
             train_writer.flush()
 
-        return global_steps.numpy(), optimizer.lr.numpy(), song_loss.numpy(), error_df
+        return global_steps.numpy(), optimizer.lr.numpy(), song_loss.numpy(), error_df, song_loss_by_class.numpy()
 
     def display_error_metrics(error_df):
         '''
@@ -437,18 +440,21 @@ def main(custom_model_name = None):
         train_songs_loss = 0.0
         for spectrogram, target, label_ref_df, song_name in train_set:   # outputs a full song's spectrogram and target and label reference df, over the entire dataset
             # do a train step with the current spectrogram and target
-            glob_steps, current_lr, song_loss, error = song_step(spectrogram, target, label_ref_df, train_set.set_type, song_name)
+            glob_steps, current_lr, song_loss, error, sl_by_class = song_step(spectrogram, target, label_ref_df, train_set.set_type, song_name)
             current_step = (glob_steps % steps_per_epoch) if (glob_steps % steps_per_epoch) != 0 else steps_per_epoch # fixes the modulo returning 0 issue for display
             train_songs_loss += song_loss
             if epoch+1 == TRAIN_EPOCHS:   # in the last epoch, want to get the sum of all training error statistics.
                 final_epoch_error_df_list.append(error)
             print('Epoch:{:2} Song{:3}/{}, lr:{:.6f}, song_loss:{:8.6f}, {}'.format(epoch+1, current_step, steps_per_epoch, current_lr, song_loss, song_name))
+            if (glob_steps % 50) == 0:
+                sl_by_class_dict = { configs_dict['class_names_dict'][idx] : sl_by_class[idx] for idx in range(sl_by_class.shape[0]) }
+                print(f'Song Loss by class for {song_name}: {sl_by_class_dict}')
 
         total_val = 0.0
         val_error_list = []   # combining all the validation songs into one big error_metrics_df later
         for spectrogram, target, label_ref_df, song_name in val_set:
             # do a validation step with the current spectrogram and target
-            _, _2, song_loss, error_ = song_step(spectrogram, target, label_ref_df, val_set.set_type, song_name)
+            _, _2, song_loss, error_, sl_by_class = song_step(spectrogram, target, label_ref_df, val_set.set_type, song_name)
             total_val += song_loss
             val_error_list.append(error_)
             if epoch+1 == TRAIN_EPOCHS:   # in the last epoch, want to get the sum of all training + validation error statistics.

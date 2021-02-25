@@ -213,38 +213,50 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
         input_layer = Input(shape = (n_features, (N_CONTEXT_PRE+1+N_CONTEXT_POST), 1, ), dtype = 'float32')  # creates a None in first dimension for the batch size
 
         # ZeroPadding 2D layer
-        zero_padded = ZeroPadding2D(padding = (0,0))(input_layer)
+        zero_padded = ZeroPadding2D(padding = (2,2))(input_layer)
 
         # Frequency branch: the convs that are looking for features across wide range of freqencies (tall filters)
-        freq_branch = conv2D_block(zero_padded, 64,  kernel_shape = (15,3), strides_arg = (1,1), activation = activ)
+        freq_branch = conv2D_block(zero_padded, 32,  kernel_shape = (21,3), strides_arg = (1,1), activation = activ)
+        '''
         # Frequency branch: residual i block
-        freq_branch = residual_i_block(freq_branch, filter_nums=(32,64), strides_arg = (1,1), activation = activ)
+        freq_branch = residual_i_block(freq_branch, filter_nums=(16,32), strides_arg = (1,1), activation = activ)
+        '''
+        # DropOut
+        freq_branch = Dropout(rate = 0.33)(freq_branch, training = training)
         # Frequency branch: MaxPool
-        freq_branch = MaxPool2D(pool_size = (5,3), strides=None, padding = 'same')(freq_branch)
-
+        freq_branch = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(freq_branch)
 
         # Time branch: the convs that are looking for features across wide range of time (wide filters)
-        time_branch = conv2D_block(zero_padded, 64,  kernel_shape = (3,9), strides_arg = (1,1), activation = activ) # note that input layer goes here as well
+        time_branch = conv2D_block(zero_padded, 32,  kernel_shape = (3,12), strides_arg = (1,1), activation = activ) # note that input layer goes here as well
+        '''
         # Time branch: residual i block
-        time_branch = residual_i_block(time_branch, filter_nums=(32,64), strides_arg = (1,1), activation = activ)
+        time_branch = residual_i_block(time_branch, filter_nums=(16,32), strides_arg = (1,1), activation = activ)
+        '''
+        # DropOut
+        time_branch = Dropout(rate = 0.33)(time_branch, training = training)
         # Time branch: MaxPool
-        time_branch = MaxPool2D(pool_size = (5,3), strides=None, padding = 'same')(time_branch)
-
+        time_branch = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(time_branch)
 
 
         # Combine the branches, concatenating along the channels
         timefreq = Concatenate()([freq_branch, time_branch])
         # convolve the timefreq, expanding the num_channels using a res_block
-        timefreq = conv2D_block(timefreq, 128,  kernel_shape = (3,3), strides_arg = (1,1), activation = activ)
-        timefreq = residual_c_block(timefreq, filter_nums=(128,256), strides_arg = (1,1), activation = activ)
+        timefreq = conv2D_block(timefreq, 64,  kernel_shape = (3,3), strides_arg = (1,1), activation = activ)
+        '''
+        timefreq = residual_c_block(timefreq, filter_nums=(64,128), strides_arg = (1,1), activation = activ)
         #timefreq = residual_i_block(timefreq, filter_nums=(128,256), strides_arg = (1,1), activation = activ)
+        '''
+        # DropOut
+        timefreq = Dropout(rate = 0.33)(timefreq, training = training)
 
         # Asymmetric Pool2D
         timefreq = MaxPool2D(pool_size = (3,1), strides=None, padding = 'same')(timefreq)
 
         # 1x1 conv the TimeFreq: "downsampling" the number of channels
-        timefreq = conv2D_block(timefreq, 64, kernel_shape = (1,1), strides_arg = (1,1), activation = activ)
+        timefreq = conv2D_block(timefreq, 16, kernel_shape = (1,1), strides_arg = (1,1), activation = activ)
 
+        # DropOut
+        timefreq = Dropout(rate = 0.33)(timefreq, training = training)
         # Pool2D
         timefreq = MaxPool2D(pool_size = (3,3), strides=None, padding = 'same')(timefreq)
 
@@ -252,7 +264,7 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
         output = Flatten()(timefreq)
 
         # 1 x 256 FC Dense + activation
-        output = Dense(256, activation = activ)(output)
+        output = Dense(128, activation = activ)(output)
         output = BatchNormalization()(output)
 
         # FC Dense sigmoid activation
@@ -274,11 +286,14 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
 
             for layer in dn_model.layers:
                 layer.trainable = False    # sets parameters to False to train only the top/last layer of the network (added after this)
-                if TRAIN_FINE_TUNE and ('conv5' in layer.name):
-                    layer.trainable = True    # fine-tuning the last conv block layer in DenseNet
+                if TRAIN_FINE_TUNE: # and ('conv5' in layer.name):
+                    layer.trainable = True    # fine-tuning layers specified by if statement
 
             output = Flatten()(dn_model.layers[-1].output)
+            output = Dropout(rate = 0.333)(output, training = training)
             output = Dense(128, activation = activ)(output)
+            output = BatchNormalization()(output)
+            output = Dropout(rate=0.333)(output, training = training)
             output = Dense(n_classes, activation = 'sigmoid')(output)    # FC Dense Sigmoid activation
 
 

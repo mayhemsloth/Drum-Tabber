@@ -368,6 +368,6 @@ class Dataset(object):
             Dataframe: label_ref_df that contains the new column of 'sample start ms' which is the ms number where that df row starts
         '''
 
-        label_ref_df = song_df.drop(columns = ['song slice'], errors = 'ignore').copy()   # get a dataframe that only has the labels and sample starts
+        label_ref_df = song_df.drop(columns = ['song slice', 'drums slice'], errors = 'ignore').copy()   # get a dataframe that only has the labels and sample starts
 
         return label_ref_df

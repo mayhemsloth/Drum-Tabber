@@ -1108,6 +1108,13 @@ def collapse_class(FullSet_df, keep_dynamics = False, keep_bells = False, keep_t
     replace_dict['tk'].update({'1': DOWNBEAT_CHAR})              # DOWNBEAT_CHAR = 'C' stands for 'Click', a louder click from a metronome, used to denote the downbeat
     FullSet_df = FullSet_df.replace(to_replace = replace_dict, value = None)
 
+    # TODO: Finish SIMPLE_CLASS_ONLY implementation (where model only uses Bass, Snare, and Cymbal)
+    if SIMPLE_CLASS_ONLY:
+        drums_to_keep = [master_format_dict[x] for x in master_format_dict.keys() if ('bass' in x or 'snare' in x)  and master_format_dict[x] in FullSet_df.columns]
+        cymbals_to_keep = []
+        classes_to_keep = drums_to_keep + cymbals_to_keep
+
+
     return FullSet_df
 
 def create_configs_dict(df):
