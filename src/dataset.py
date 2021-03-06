@@ -127,7 +127,7 @@ class Dataset(object):
         Helper function to get the song list for the current Dataset type
 
         Args:
-            dataset_type [str]: either 'train' or 'val'
+            dataset_type [str]: either 'train' or 'val' or 'verify'
 
         Returns:
             list: a list of strings that are the names of the song subfolders that exist for that dataset type
@@ -136,6 +136,8 @@ class Dataset(object):
             return [x.name for x in os.scandir(SONGS_PATH) if x.is_dir() and x.name not in VAL_SONG_LIST]
         if dataset_type == 'val':
             return [x.name for x in os.scandir(SONGS_PATH) if x.is_dir() and x.name in VAL_SONG_LIST]
+        if dataset_type == 'verify':
+            return [x.name for x in os.scandir(SONGS_PATH) if x.is_dir()]
 
     @staticmethod
     def create_composition():

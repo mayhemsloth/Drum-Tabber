@@ -1149,7 +1149,7 @@ def create_configs_dict(df):
                     'negative_window_fraction' : NEGATIVE_WINDOW_FRACTION,
                     'positive_window_fraction' : POSITIVE_WINDOW_FRACTION,
                     'tolerance_window' : TOLERANCE_WINDOW,
-                    'classification_dict' : {'clean_date' : CLEAN_DATA, 'keep_dynamics': KEEP_DYNAMICS, 'keep_bells': KEEP_BELLS,
+                    'classification_dict' : {'clean_data' : CLEAN_DATA, 'keep_dynamics': KEEP_DYNAMICS, 'keep_bells': KEEP_BELLS,
                                              'keep_toms_seperate' : KEEP_TOMS_SEPARATE, 'hihat_classes' : HIHAT_CLASSES, 'cymbal_classes' : CYMBAL_CLASSES},
                     'month_date' : month_date,
                     'training_dict' : {'train_data_aug' : TRAIN_DATA_AUG, 'train_epochs': TRAIN_EPOCHS, 'include_drum_stem': TRAIN_INCLUDE_DRUM_STEM,
@@ -1163,7 +1163,7 @@ def create_configs_dict(df):
 
 # END OF HUMAN-FACING UTILITY FUNCTIONS
 
-# START OF MODEL SAVING, LOADING, AND INFERENCE FUNCTIONS
+# START OF MODEL SAVING and LOADING FUNCTIONS
 def save_drum_tabber_model(drum_tabber, model_name, saved_models_path, configs_dict):
     '''
     Saves a keras.Model drum-tabber to the correct location, along with the configs dictionary used to build that model
@@ -1193,6 +1193,7 @@ def save_drum_tabber_model(drum_tabber, model_name, saved_models_path, configs_d
 
     return None
 
+
 def load_drum_tabber_model(model_name, saved_models_path):
     '''
     Simple human-facing helper function to load drum_tabber models more easily. Assumes the saved model was
@@ -1213,172 +1214,4 @@ def load_drum_tabber_model(model_name, saved_models_path):
 
     return drum_tabber, configs_dict
 
-def song_to_tab(drum_tabber, configs_dict, song_file_w_extension, songs_to_tab_folder_path, write_to_txt = True):
-    '''
-    High-level function that takes a trained model and a new song, makes an inference on that song, and then writes the results to a filepath
-
-    Args:
-        drum_tabber [keras.Model]:
-        configs_dict [dict]:
-        song_file_w_extension [str]:
-        songs_to_tab_folder_path [str]:
-        write_to_txt [bool]: Default True. If true, will write to a .txt file.
-
-    Returns:
-        list: list of strings, a reconstructed machine-friendly tab that represents the song's drum tab from the model inference pass and post-processing.
-    '''
-
-    '''---LOAD SONG---'''
-    song_name = os.path.splitext(song_file_w_extension)[0]  # grabs the string of the song name only
-    song_file_ext = os.path.splitext(song_file_w_extension)[1][1:]  # grabs the string extension of the file
-    abs_song_fp = os.path.join(songs_to_tab_folder_path, song_name, song_file_w_extension) # ASSUMES A song_to_tab_folder ---> song_name_folder ---> song_file_w_extension folder storage format
-    song, sr_song = load_song(abs_song_fp)    # loads mono here
-
-    '''---CONVERT SONG INTO SPECTROGRAM (using configs_dict parameters)---'''
-    spectrogram = song_to_spectrogram(song, sr_song, configs_dict)
-
-    '''---TRANSFORM SPECTROGRAM INTO INPUT ARRAY---'''
-    input = spectrogram_to_input(spectrogram, configs_dict)  # input.shape = (n_windows (examples), n_features, width_size)
-
-    '''---MAKE INFERENCE WITH TRAINED MODEL AND INPUT ARRAY---'''
-    prediction = drum_tabber(np.expand_dims(input, axis=-1), training = False).numpy()   # expand dimension to make proper dimension, then change output from TF to numpy
-
-    '''---SEND PREDICTIONS THROUGH PEAK PICKING FUNCTION---'''
-    detected_peaks = detect_peaks(prediction)
-
-    '''---DECODE THE PEAKS (PREDICTED ONSET EVENTS!) INTO A TAB---'''
-    class_names_dict = configs_dict['class_names_dict']     # class_names_dict has structure of {idx_in_prediction : 'class_label_name'}
-
-
-
-    return None
-
-def load_song(direct_filepath, mono_channel=True):
-    '''
-    Helper function used to load a song in to be tabbed (using librosa load)
-
-    Args:
-        direct_filepath [str]: absolute filepath to the song's file to be loaded in
-        mono_channel [bool]: Default is True. Boolean to choose to load song in mono or stereo
-
-    Returns:
-        np.array: librosa song samples, either (n,) or (2,n) shape depending on mono or stereo
-        int: sample rate (sr) for the song
-    '''
-
-    # uses librosa to output a np.ndarray of shape (n,) or (2,n) depending on the channels
-    lb_song, sr_song = lb.core.load(direct_filepath, sr=None, mono=mono_channel)
-
-    return lb_song, song_sr
-
-def song_to_spectrogram(song, sr_song, configs_dict):
-    '''
-    Helper function to make a song into a spectrogram based on the model configurations that the spectrogram will be processed in
-
-    Args:
-        song [np.array]: librosa song samples
-        sr_song [int]: sample rate (sr) for the song
-        configs_dict [dict]: configurations dictionary created with the Keras model upon training
-
-    Returns:
-        np.array: spectrogram, created with correct configs, and also normalized corectly
-    '''
-
-    spectro = lb.feature.melspectrogram(np.asfortranarray(song), sr=sr_song, n_fft = configs_dict['window_size'], hop_length = configs_dict['hop_size'], center = False, n_mels = configs_dict['n_mels'])
-    if configs_dict['shift_to_db']:
-        spectro = lb.power_to_db(spectro, ref = np.max)
-    # manually normalize the current spectro channel
-    spectro_norm = (spectro - spectro.mean())/spectro.std()
-    if configs_dict['include_fo_differential']:
-        spectro_ftd = lb.feature.delta(data = spectro, width = 9, order=1, axis = -1)    # calculate the first time derivative of the spectrogram. Uses 9 frames to calculate
-            # spectro_f(irst)t(ime)d(erivative).shape = (n_mels, t) SAME AS spectro
-        # manually normalize current spectro_ftd
-        spectro_ftd_norm = (spectro_ftd - spectro_ftd.mean())/spectro_ftd.std()
-        spectro_norm = np.concatenate([spectro_norm, spectro_ftd_norm], axis = 0)    # first time derivative attached at end of normal log mel spectrogram (n_mels of spectro, then n_mels of ftd)
-            # spectro.shape = (2* n_mels, t) = (n_mels from spectro THEN n_mels from spectro_ftd, t)
-    spectrogram = np.copy(spectro_norm)   # 2D np.array
-
-    return spectrogram
-
-def spectrogram_to_input(spectrogram, configs_dict):
-    '''
-    Helper function to change a spectrogram into the proper input shape of the current model
-
-    Args:
-        spectrogram [np.array]: 2D spectrogram
-        configs_dict [dict]: configurations dictionary created with the Keras model upon training
-
-    Returns:
-        np.array: proper input shape of the spectrogram
-    '''
-
-    n_features, n_windows = spectrogram.shape
-
-    # TODO: Finish the other model type options when they become available
-    if configs_dict['model_type'] in  ['Context-CNN', 'TimeFreq-CNN']:
-        pre_context, post_context = configs_dict['n_context_pre'], configs_dict['n_context_post']
-        input_width = pre_context + 1 + post_context
-        min_value = np.min(spectrogram)
-
-        # assign into this np.array filled with the min values of the spectrogram (silence)
-        input_array = np.full(shape = (n_windows, n_features, input_width), fill_value = min_value)
-
-        for idx in range(n_windows):
-            if idx - pre_context < 0:    # in a window where you would slice before the beginning
-                start = pre_context-idx
-                input_array[idx, :, start:] = spectrogram[:, 0:idx+post_context+1]
-            elif idx + post_context+1 > n_windows: # in a window where you would slice past the end
-                end = post_context+1 - (n_windows - idx)
-                input_array[idx, :, :input_width-end] = spectrogram[:, idx-pre_context: n_windows]
-            else:    # in a "normal" middle window where you slice into the spectrogram normally
-                input_array[idx, :,:] = spectrogram[:, idx-pre_context : idx+post_context+1]
-
-    else:
-        input_array = None
-        print('Other model types are not implemented yet!')
-
-    return input_array
-
-def detect_peaks(prediction, peak_pick_parameters = {'pre_max' : 2, 'post_max' : 2, 'pre_avg' : 20, 'post_avg' : 20, 'delta' : 0.5, 'wait' :5}):
-    '''
-    Detects peaks of the prediction output of the TF model. Powered by librosa.util.peak_pick
-
-    Args:
-        prediction [np.array]: output of an inference of a drum-tabber model. Has shape of (n_examples, n_classes)
-        peak_pick_parameters [dict]: dictionary containing the parameters to be used in the librosa peak_pick function
-                                    Default dictionary is {'pre_max' : 2, 'post_max' : 2, 'pre_avg' : 20, 'post_avg' : 20, 'delta' : 0.5, 'wait' :5}
-
-    Returns:
-        np.array: same shape as prediction array, but with 0s and 1s, where 1s identify the peaks for each class
-    '''
-
-    n_examples, n_classes = prediction.shape
-    detected_peaks = np.zeros(shape = prediction.shape)
-
-    for idx in range(n_classes):  # lb.util.peak_pick can accept only 1D data, so must use for loop to go through each class one at a time
-        peaks_idx = lb.util.peak_pick(x = prediction[:,idx],
-                                      pre_max = peak_pick_parameters['pre_max'], post_max = peak_pick_parameters['post_max'],
-                                      pre_avg = peak_pick_parameters['pre_avg'], post_avg =  peak_pick_parameters['post_avg'],
-                                      delta =  peak_pick_parameters['delta'], wait =  peak_pick_parameters['wait']
-                                      )
-        if len(peaks_idx) != 0:   # ensures no error occurs if no peaks are found and peak_pick returns an empty set (which means all peaks are 0, already)
-            detected_peaks[peaks_idx, idx] = 1    # assign 1 at sample_idx where peak is detected, all other values are 0
-
-    # TODO: if I wanted to implement CLASS-DEPENDENT peak pick parameters, then I would need to rewrite most of this function to introduce a
-    #       idx-dependent parameters in the for loop. Additionally, code to check if the dictionary passed is applicable to all or class-dependent
-    #       Class-dependent peak pick parameters basically would manually rectify the poor onset prediction performance in the more sparse classes
-
-    return detected_peaks
-
-def peaks_to_tab(detected_peaks, configs_dict):
-    '''
-    Changes the detected peaks array into a tab-like array by morphing the spectrogram-sized array into a time-based array.
-    Heavily relies on detected peaks of beats being "correct" (to infer the time).
-
-    Args:
-        detected_peaks [np.array]: a 0s/1s array of shape (n_samples, n_classes) that denotes location of peaks. Output of detect_peaks function
-        configs_dict [dict]:
-    '''
-
-    return None
-# END OF MODEL SAVING, LOADING, AND INFERENCE FUNCTIONS
+# END OF MODEL SAVING AND LOADING FUNCTIONS

@@ -47,8 +47,8 @@ TRAIN_CHECKPOINT_MODEL_NAME    = ''
 TRAIN_FINE_TUNE                = True
 # Spleeter train options
 TRAIN_USE_DRUM_STEM           = False     # if true, use the drum stem slices from the MAT_df to help with training the model
-TRAIN_INCLUDE_DRUM_STEM       = True     # if true, uses spleeter to separate out the drum stem and then append it as an additional channel
-TRAIN_INCLUDE_MIXED_STEM      = False     # if true, uses spleeter to separate out the drum stem and then mix it with original mix to accentuate drums, then append as additional channel
+TRAIN_INCLUDE_DRUM_STEM       = True     # if true, uses the separated out drum stem and then append it as an additional channel
+TRAIN_INCLUDE_MIXED_STEM      = False     # if true, uses the seperated out drum stem and then mix it with original mix to accentuate drums, then append as additional channel
 TRAIN_MIXED_STEM_WEIGHTS      = (0.5,0.5) # the weights multiplied by the full mix and drum mix respectively when added together
 TRAIN_REPLACE_WITH_MIXED_STEM = False      # if true, replaces the normal full song channel with the mixed stem
 
