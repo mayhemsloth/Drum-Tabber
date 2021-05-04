@@ -77,7 +77,8 @@ class Dataset(object):
         '''
         if self.FullSet_memory:               # if True, we have access to the FullSet subset
             song_df = self.subset_df.loc[song_title].copy()   # won't affect the underlying self.subset_df and gets rid of multi-indexing song title labels
-            song_df['sample start'] = song_df['sample start'].apply(lambda valu: valu-song_df.at[0, 'sample start']) # realigning the sample start number to beginning of the reconstructed slice (instead of beginning of the actual song)
+            initial_sample_start = song_df.at[0, 'sample start']
+            song_df['sample start'] = song_df['sample start'].apply(lambda valu: valu-initial_sample_start) # realigning the sample start number to beginning of the reconstructed slice (instead of beginning of the actual song)
             if self.data_aug:
                 song_df = self.shift_augmentation(song_df)  # implemented my own shift augmentation function because it was simpler to move the entire df labels and samples together
             song = np.vstack(song_df['song slice'].to_numpy()).T   # stacks the song slices back into a single numpy array of shape (channels, samples)
@@ -342,6 +343,21 @@ class Dataset(object):
         # the spectrogram represents the entire "song" or clip, and thus we assume it starts at sample 0 w.r.t. the song's samples
         # each window is WINDOW_SIZE long, and each window starts at sample idx_frame_in_list * HOP_SIZE
 
+        # NEW APPROACH
+        for tab_slice_idx, start in enumerate(sample_starts):    # loop through each value of the sample start, and then a smaller secondary loop for each start
+            sample_search_start = max(0, start-WINDOW_SIZE) # including more than needed to be on the safe side. Forces positive search_start
+            sample_search_end = min(start+WINDOW_SIZE, n_windows*HOP_SIZE)    # including more than needed to be on the safe side. Forces safe indexing searching
+            window_idx_start = min(sample_search_start // HOP_SIZE, n_windows-1)
+            window_idx_end = min(sample_search_end // HOP_SIZE, n_windows)
+            for window_idx in range(window_idx_start, window_idx_end+1):
+                window_start = window_idx*HOP_SIZE
+                positive_window = int(window_start + POSITIVE_WINDOW_FRACTION*WINDOW_SIZE)
+                negative_window = int(window_start - NEGATIVE_WINDOW_FRACTION*WINDOW_SIZE)
+                if (negative_window < start < positive_window) and (window_idx < n_windows):    # the current drum event's sample_starts falls within acceptable range
+                    targets[:, window_idx, :] = np.stack([labels_df.loc[tab_slice_idx].to_numpy() for _ in range(n_channels)], axis=-1)
+                    # ASSUMES all channels contain the same "drum data" for labeling purposes
+
+        ''' OLD APPROACH
         # loop through each window, and check if that window is in "range" to be labeled
         tab_slice_idx = 0
         for idx in range(n_windows):
@@ -351,11 +367,12 @@ class Dataset(object):
             # TODO: fix this algorithmic approach so that it is more compatible with a larger WINDOW_SIZE while also being speedy
             if negative_window < sample_starts[tab_slice_idx] <= positive_window: # the drum event's sample_start falls within the acceptable range
                 targets[:, idx, :] = np.stack([labels_df.loc[tab_slice_idx].to_numpy() for _ in range(n_channels)], axis=-1)
-                ''' ASSUMES all channels contain the same "drum data" for labeling purposes '''
+                # ASSUMES all channels contain the same "drum data" for labeling purposes
             if sample_starts[tab_slice_idx] < negative_window:   # if the sliding windows have passed the current tab slice
                 tab_slice_idx +=1
             if tab_slice_idx >= len(sample_starts):
                 break
+        '''
 
         return targets
 

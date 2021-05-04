@@ -288,37 +288,6 @@ def spectrogram_to_input(spectrogram, configs_dict):
 
     return input_array
 
-def detect_peaks(prediction, peak_pick_parameters = {'pre_max' : 2, 'post_max' : 2, 'pre_avg' : 20, 'post_avg' : 20, 'delta' : 0.5, 'wait' :5}):
-    '''
-    Detects peaks of the prediction output of the TF model. Powered by librosa.util.peak_pick
-
-    Args:
-        prediction [np.array]: output of an inference of a drum-tabber model. Has shape of (n_examples, n_classes)
-        peak_pick_parameters [dict]: dictionary containing the parameters to be used in the librosa peak_pick function
-                                    Default dictionary is {'pre_max' : 2, 'post_max' : 2, 'pre_avg' : 20, 'post_avg' : 20, 'delta' : 0.5, 'wait' :5}
-
-    Returns:
-        np.array: same shape as prediction array, but with 0s and 1s, where 1s identify the peaks for each class
-    '''
-
-    n_examples, n_classes = prediction.shape
-    detected_peaks = np.zeros(shape = prediction.shape)
-
-    for idx in range(n_classes):  # lb.util.peak_pick can accept only 1D data, so must use for loop to go through each class one at a time
-        peaks_idx = lb.util.peak_pick(x = prediction[:,idx],
-                                      pre_max = peak_pick_parameters['pre_max'], post_max = peak_pick_parameters['post_max'],
-                                      pre_avg = peak_pick_parameters['pre_avg'], post_avg =  peak_pick_parameters['post_avg'],
-                                      delta =  peak_pick_parameters['delta'], wait =  peak_pick_parameters['wait']
-                                      )
-        if len(peaks_idx) != 0:   # ensures no error occurs if no peaks are found and peak_pick returns an empty set (which means all peaks are 0, already)
-            detected_peaks[peaks_idx, idx] = 1    # assign 1 at sample_idx where peak is detected, all other values are 0
-
-    # TODO: if I wanted to implement CLASS-DEPENDENT peak pick parameters, then I would need to rewrite most of this function to introduce a
-    #       idx-dependent parameters in the for loop. Additionally, code to check if the dictionary passed is applicable to all or class-dependent
-    #       Class-dependent peak pick parameters basically would manually rectify the poor onset prediction performance in the more sparse classes
-
-    return detected_peaks
-
 def peaks_to_tab(detected_peaks, configs_dict):
     '''
     Changes the detected peaks array into a tab-like array by morphing the spectrogram-sized array into a time-based array.

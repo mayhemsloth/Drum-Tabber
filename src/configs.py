@@ -14,8 +14,8 @@ WINDOW_SIZE = 2048    # number of samples large that each spectro slice is. At 2
 HOP_SIZE    = 441     # number of samples to hop each time when creating the spectrogram. 441 gives a 10ms hop size. That is, you produce a window every 10 ms
 FMAX        = 10000   # in Hz, the maximum frequency that the mel filter-bank (spectrogram) outputs; if None, function uses sr / 2.0
 INCLUDE_FO_DIFFERENTIAL = False  # keeps the first order differential over time of the spectrograms
-NEGATIVE_WINDOW_FRACTION = 0.1   # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
-POSITIVE_WINDOW_FRACTION = 0.1   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
+NEGATIVE_WINDOW_FRACTION = 0.15   # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
+POSITIVE_WINDOW_FRACTION = 0.15   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
 MODEL_TYPE = 'TimeFreq-CNN'    # the model type desired to build. Possible choices are 'Context-CNN', 'TimeFreq-CNN', 'TL-DenseNet121/169/201'
 N_CONTEXT_PRE  = 15    # the number of context windows included before the target window in any context model type
 N_CONTEXT_POST = 15    # the number of context windows included after the target window in any context model type
@@ -44,7 +44,7 @@ TRAIN_LOGDIR                   = 'logs'
 TRAIN_CHECKPOINTS_FOLDER       = 'models/checkpoints'
 TRAIN_FROM_CHECKPOINT          = False
 TRAIN_CHECKPOINT_MODEL_NAME    = ''
-TRAIN_FINE_TUNE                = True
+TRAIN_FINE_TUNE                = False
 # Spleeter train options
 TRAIN_USE_DRUM_STEM           = False     # if true, use the drum stem slices from the MAT_df to help with training the model
 TRAIN_INCLUDE_DRUM_STEM       = True     # if true, uses the separated out drum stem and then append it as an additional channel
@@ -62,7 +62,7 @@ TRAIN_EPOCHS          = 20
 
 
 # augmentation options
-TRAIN_DATA_AUG             = False
+TRAIN_DATA_AUG             = True
 BACKGROUNDNOISES_PATH      = "/content/gdrive/My Drive/Drum-Tabber-Support-Data/BackgroundNoises/normalized"    # the absolute filepath to the folder containing the BackgroundNoises used to add noises
 SHIFT_CHANCE               = 0.5   # half of songs will start at a random point instead of the beginning, but still include the full song (wrapped around to end)
 POLARITY_CHANCE            = 0.5   # half of the songs will be flipped upside. Should produce more varied samples when adding things
@@ -77,13 +77,13 @@ GAIN_CHANCE                = 0.25
 MP3_COMPRESSION_CHANCE     = 0.25
 BIN_DROPOUT_CHANCE         = 0.25
 BIN_DROPOUT_RATIO          = 0.05  # percentage of bins that will be set to 0 if bin dropout chance is successful
-S_NOISE_CHANCE             = 0.0
+S_NOISE_CHANCE             = 0.05
 S_NOISE_RANGE_WIDTH        = 0.1   # width of range of numbers around 1 that S_noise will choose from to multiply by to create noise (0.1 ==> pulls from 0.95 to 1.05)
 
 
 # validation options
 VAL_DATA_AUG         = False
-VAL_SONG_LIST        = ['misery_business', 'four_years', 'hair_of_the_dog', 'best_of_me', 'mookies_last_christmas', 'coffeeshop_soundtrack' ]     # the songs that will be not used in the training set but instead in the validation set
+VAL_SONG_LIST        = ['track_8', 'sow', 'let_it_enfold_you', 'the_kill', 'misery_business', 'four_years', 'hair_of_the_dog', 'best_of_me', 'mookies_last_christmas', 'coffeeshop_soundtrack' ]     # the songs that will be not used in the training set but instead in the validation set
 VAL_BATCH_SIZE       = 256
 # Spleeter validation options
 VAL_USE_DRUM_STEM           = TRAIN_USE_DRUM_STEM # if true, use the drum stem slices from the MAT_df to help with validating the model

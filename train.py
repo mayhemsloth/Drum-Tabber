@@ -35,6 +35,10 @@ def main(custom_model_name = None):
         None (Trains a model, writes to log that can be read by TensorBoard, saves the final model and configs dictionary describing it)
     '''
 
+    # check configs compatibility with labeling window
+    assert NEGATIVE_WINDOW_FRACTION + POSITIVE_WINDOW_FRACTION > HOP_SIZE/WINDOW_SIZE, 'Total labeling window fraction is not greater than HOP_SIZE/WINDOW_SIZE. Will not properly label data. Change WINDOW_FRACTION or HOP_SIZE and WINDOW_SIZE'
+
+
     # set GPU usage
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if len(gpus) > 0:
