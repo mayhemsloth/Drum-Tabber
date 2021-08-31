@@ -199,7 +199,6 @@ class MusicAlignedTab(object):
                     audio.append(item2)
             ipd.display(ipd.Audio(np.array(audio).T, rate = 44100))
 
-        # TODO: Combine these two for loop subcode into one subfunction to make it cleaner
         for drum in drums_possible:
             print("Sampling a " + str(drum) + " event for alignment check... Loading tab and audio slice")
 

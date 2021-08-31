@@ -269,8 +269,21 @@ def main(custom_model_name = None):
 
         if model_type in ['Context-CNN', 'TimeFreq-CNN',  'TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
             #losses = tf.nn.sigmoid_cross_entropy_with_logits(labels = target_array.astype(np.float32), logits = prediction)
+            '''
+            JULY 8th, 2021: I realized in my preparation for Transformer Implementation that I did not implement the loss function correctly.
+            The "with_logits" part of the name of this loss function refers to the fact that the inputs should be LOGITS - that is NOT activated with a
+            sigmoid function already. All of my CNNs are ending with a sigmoid activation function already. So my first attempt will be to undo the sigmoid function
+            with some code that I found on the internet
+            '''
+
+            # transform predictions back to logits before giving it to the funtion
+            _epsilon = tf.convert_to_tensor(tf.keras.backend.epsilon(), prediction.dtype.base_dtype)
+            logits_from_pred = tf.clip_by_value(prediction, _epsilon, 1 - _epsilon)
+            logits_from_pred = tf.math.log(logits_from_pred / (1 - logits_from_pred))
+
+            # compute the losses with the new logits_from_prediction
             losses = tf.nn.weighted_cross_entropy_with_logits(labels = target_array.astype(np.float32),
-                                                              logits = prediction,
+                                                              logits = logits_from_pred,
                                                               pos_weight = 1/target_freq)
 
         # TODO: implement loss type for the RCNN type

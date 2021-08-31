@@ -19,7 +19,7 @@ POSITIVE_WINDOW_FRACTION = 0.15   # this number denotes the fraction (of the WIN
 MODEL_TYPE = 'TimeFreq-CNN'    # the model type desired to build. Possible choices are 'Context-CNN', 'TimeFreq-CNN', 'TL-DenseNet121/169/201'
 N_CONTEXT_PRE  = 15    # the number of context windows included before the target window in any context model type
 N_CONTEXT_POST = 15    # the number of context windows included after the target window in any context model type
-TOLERANCE_WINDOW = 15  # in ms, the amount of time that is allowable left and right of sample labelled as correct. Note that a 200 BPM 16th note grid corresponds to 75 ms duration. 150 BPM is 100 ms duration
+TOLERANCE_WINDOW = 20  # in ms, the amount of time that is allowable left and right of sample labelled as correct. Note that a 200 BPM 16th note grid corresponds to 75 ms duration. 150 BPM is 100 ms duration
 SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatever it is in when you get the output from lb.melspectrogram
 
 SAMPLE_RATE = 44100  # TODO: need to delete this whenever I finally implement the sr carryover from the song loading in
@@ -46,7 +46,7 @@ TRAIN_FROM_CHECKPOINT          = False
 TRAIN_CHECKPOINT_MODEL_NAME    = ''
 TRAIN_FINE_TUNE                = False
 # Spleeter train options
-TRAIN_USE_DRUM_STEM           = False     # if true, use the drum stem slices from the MAT_df to help with training the model
+TRAIN_USE_DRUM_STEM           = True     # if true, use the drum stem slices from the MAT_df to help with training the model
 TRAIN_INCLUDE_DRUM_STEM       = True     # if true, uses the separated out drum stem and then append it as an additional channel
 TRAIN_INCLUDE_MIXED_STEM      = False     # if true, uses the seperated out drum stem and then mix it with original mix to accentuate drums, then append as additional channel
 TRAIN_MIXED_STEM_WEIGHTS      = (0.5,0.5) # the weights multiplied by the full mix and drum mix respectively when added together
@@ -58,7 +58,7 @@ TRAIN_BATCH_SIZE      = 256      # the number of individual images (slices of th
 TRAIN_LR_INIT         = 1e-4
 TRAIN_LR_END          = 5e-6
 TRAIN_WARMUP_EPOCHS   = 1
-TRAIN_EPOCHS          = 20
+TRAIN_EPOCHS          = 50
 
 
 # augmentation options
@@ -82,7 +82,7 @@ S_NOISE_RANGE_WIDTH        = 0.1   # width of range of numbers around 1 that S_n
 
 
 # validation options
-VAL_DATA_AUG         = False
+VAL_DATA_AUG         = True
 VAL_SONG_LIST        = ['track_8', 'sow', 'let_it_enfold_you', 'the_kill', 'misery_business', 'four_years', 'hair_of_the_dog', 'best_of_me', 'mookies_last_christmas', 'coffeeshop_soundtrack' ]     # the songs that will be not used in the training set but instead in the validation set
 VAL_BATCH_SIZE       = 256
 # Spleeter validation options
