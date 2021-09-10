@@ -14,8 +14,10 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Input, ReLU, LeakyReLU, Dropout, Flatten, Concatenate, Add
 from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, MaxPool2D, ZeroPadding2D, AveragePooling2D
+from tensorflow.keras.layers import MultiHeadAttention
 from tensorflow.keras.applications.densenet import DenseNet121, DenseNet169, DenseNet201
 
+from src.tst import TimeSeriesTransformer
 from src.configs import *
 
 '''  ~~~~~ Initial Drum-Tabber model goals~~~~~
@@ -142,6 +144,10 @@ def residual_i_block(input, filter_nums, strides_arg = (1,1), activation = 'relu
         output = LeakyReLU(alpha=0.2)(output)
 
     return output
+
+
+
+
 
 def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
     '''
@@ -295,6 +301,8 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
             output = BatchNormalization()(output)
             output = Dropout(rate=0.333)(output, training = training)
             output = Dense(n_classes, activation = 'sigmoid')(output)    # FC Dense Sigmoid activation
+
+    elif MODEL_TYPE == 'TST':
 
 
     # TODO: handle the other model type cases
