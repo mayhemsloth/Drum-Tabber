@@ -21,6 +21,7 @@ from src.dataset import Dataset
 from src.utils import MusicAlignedTab, create_FullSet_df, clean_labels, collapse_class, one_hot_encode, create_configs_dict
 from src.utils import save_drum_tabber_model, detect_peaks
 from src.model import create_DrumTabber
+from src.tsts import create_mask
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -37,7 +38,6 @@ def main(custom_model_name = None):
 
     # check configs compatibility with labeling window
     assert NEGATIVE_WINDOW_FRACTION + POSITIVE_WINDOW_FRACTION > HOP_SIZE/WINDOW_SIZE, 'Total labeling window fraction is not greater than HOP_SIZE/WINDOW_SIZE. Will not properly label data. Change WINDOW_FRACTION or HOP_SIZE and WINDOW_SIZE'
-
 
     # set GPU usage
     gpus = tf.config.experimental.list_physical_devices('GPU')

@@ -303,6 +303,11 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
             output = Dense(n_classes, activation = 'sigmoid')(output)    # FC Dense Sigmoid activation
 
     elif MODEL_TYPE == 'TST':
+        return TimeSeriesTransformer(d_features_in = n_features, d_out=n_classes, len_seq=LEN_SEQ, d_model=D_MODEL,
+                         n_heads=N_HEADS, n_encoder_layers=N_ENCODER_LAYERS, d_ffn=D_FFN, activ = ACTIV,
+                         mha_bias = MHA_BIAS, attention_dropout_p = ATTENTION_DROPOUT_P, ffn_dropout_p = FFN_DROPOUT_P,
+                         self_supervised_training = SELF_SUPERVISED_TRAINING, output_type = OUTPUT_TYPE, custom_head = CUSTOM_HEAD
+                         )
 
 
     # TODO: handle the other model type cases

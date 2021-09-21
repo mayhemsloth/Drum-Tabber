@@ -101,7 +101,7 @@ def create_mask(arr, r= 0.15, lm=4, mask_type="seq", random_type_list = None, al
         mask = rng.random(size=arr.shape) < r
 
     else:
-        print(f'{mask_type} is not valid, returning a mask with no masked values')
+        print(f'{mask_type} mask type is not valid, returning a mask with no masked values')
         mask = np.zeros_like(arr, dtype=bool)
 
     if all_batch_same:    # option for the entire batch to have the same mask

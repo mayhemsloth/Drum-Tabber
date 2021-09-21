@@ -9,10 +9,10 @@
 #================================================================
 
 ''' core feature/labeling preparation options '''
-N_MELS      = 150     # number of mel bins to be created in the spectrograms
+N_MELS      = 250     # number of mel bins to be created in the spectrograms
 WINDOW_SIZE = 2048    # number of samples large that each spectro slice is. At 2048 and 44100 Hz sample rate, each window is 46 ms
 HOP_SIZE    = 441     # number of samples to hop each time when creating the spectrogram. 441 gives a 10ms hop size. That is, you produce a window every 10 ms
-FMAX        = 10000   # in Hz, the maximum frequency that the mel filter-bank (spectrogram) outputs; if None, function uses sr / 2.0
+FMAX        = None   # in Hz, the maximum frequency that the mel filter-bank (spectrogram) outputs; if None, function uses sr / 2.0
 INCLUDE_FO_DIFFERENTIAL = False  # keeps the first order differential over time of the spectrograms
 NEGATIVE_WINDOW_FRACTION = 0.15   # this number denotes the fraction (of the WINDOW_SIZE) of the "negative" part of any frame to determine if the frame is labeled with that drum note onset sample
 POSITIVE_WINDOW_FRACTION = 0.15   # this number denotes the fraction (of the WINDOW_SIZE) of the first part of any frame to determine if a frame is labeled with that drum note onset sample
@@ -28,8 +28,8 @@ TOLERANCE_WINDOW = 20  # in ms, the amount of time that is allowable left and ri
 SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatever it is in when you get the output from lb.melspectrogram
 
 ''' time series transformer options '''
-D_FEATURES_IN = 100     # dimensionality of the input sequence
-LEN_SEQ = 16            # number of time steps in each input sequence - at the moment, expected that information is fully known and no padding needed
+D_FEATURES_IN = 250     # dimensionality of the input sequence
+LEN_SEQ = 32            # number of time steps in each input sequence - at the moment, expected that information is fully known and no padding needed
 D_MODEL = 128           # internal dimension of learned features
 N_HEADS = 2             # number of heads in the multihead attention. Note D_MODEL must be divisible by N_HEADS
 N_ENCODER_LAYERS = 3    # number of sequential encoder layer blocks
@@ -67,6 +67,7 @@ SIMPLE_CLASS_ONLY  = False    # If True, drops all classes except SD, BD, and Cy
 SONGS_PATH = '/content/gdrive/My Drive/Drum-Tabber-Support-Data/Songs'    # the absolute filepath to the folder containing all the songs data structured in the correct way with song subfolders
 SONGS_TO_TAB_PATH = 'C:/Users/Thomas/Python Projects/Drum-Tabber-Support-Data/Songs-to-Tabs'  # absolute filepath to the folder containing songs that can be converted into tabs after having a trained model
 SAVED_MODELS_PATH = '/content/gdrive/My Drive/Drum-Tabber/models/saved_models'   # absolute filepath to the folder containing the saved models
+SPECTROS_PATH = '/content/gdrive/My Drive/Drum-Tabber-Support-Data/Music-Spectro-Library/Spectrograms'
 TRAIN_SAVE_CHECKPOINT_MAX_BEST = True       # if true, saves only the absolute best model according to the validation loss (will overwrite the previous max best model)
 TRAIN_SAVE_CHECKPOINT_ALL      = False      # if true, saves all validation model checkpoints in the training process
 TRAIN_FULLSET_MEMORY           = True       # if true, utilizes the FullSet dataframe in memory to continuously pull from during training/val. ASSUMES FullSet (all songs) can be held in memory
