@@ -1,2 +1,2 @@
-model_checkpoint_path: "TimeFreq-CNN-Jul-09"
-all_model_checkpoint_paths: "TimeFreq-CNN-Jul-09"
+model_checkpoint_path: "TSTTST_diag3"
+all_model_checkpoint_paths: "TSTTST_diag3"

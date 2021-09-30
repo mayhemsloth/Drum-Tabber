@@ -20,7 +20,7 @@ POSITIVE_WINDOW_FRACTION = 0.15   # this number denotes the fraction (of the WIN
 SAMPLE_RATE = 44100  # TODO: need to delete this whenever I finally implement the sr carryover from the song loading in
 
 
-MODEL_TYPE = 'TimeFreq-CNN'    # the model type desired to build. Possible choices are 'Context-CNN', 'TimeFreq-CNN', 'TL-DenseNet121/169/201'
+MODEL_TYPE = 'TST'    # the model type desired to build. Possible choices are 'Context-CNN', 'TimeFreq-CNN', 'TL-DenseNet121/169/201'
 ''' CNN model options '''
 N_CONTEXT_PRE  = 15    # the number of context windows included before the target window in any context model type
 N_CONTEXT_POST = 15    # the number of context windows included after the target window in any context model type
@@ -29,13 +29,13 @@ SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatev
 
 ''' time series transformer options '''
 D_FEATURES_IN = 250     # dimensionality of the input sequence
-LEN_SEQ = 32            # number of time steps in each input sequence - at the moment, expected that information is fully known and no padding needed
-D_MODEL = 128           # internal dimension of learned features
-N_HEADS = 2             # number of heads in the multihead attention. Note D_MODEL must be divisible by N_HEADS
-N_ENCODER_LAYERS = 3    # number of sequential encoder layer blocks
-D_FFN = 256             # number of nodes in each feed forward network layer inside transformer encoder layer
+LEN_SEQ = 32          # number of time steps in each input sequence - at the moment, expected that information is fully known and no padding needed
+D_MODEL = 512           # internal dimension of learned features
+N_HEADS = 8             # number of heads in the multihead attention. Note D_MODEL must be divisible by N_HEADS
+N_ENCODER_LAYERS = 2    # number of sequential encoder layer blocks
+D_FFN = 512            # number of nodes in each feed forward network layer inside transformer encoder layer
 ACTIV = 'gelu'          # the activation function used for the transformer network. Should be a tensorflow compatible string activation function
-MHA_BIAS = False        # if False, does not use a bias vector for multihead attention layer. If True, does use a bias vector
+MHA_BIAS = True       # if False, does not use a bias vector for multihead attention layer. If True, does use a bias vector
 ATTENTION_DROPOUT_P = 0.1  # probability of dropout in the attention network dropout layer
 FFN_DROPOUT_P = 0.1     # probability of dropout in the feed forward dropout layer
 
@@ -44,13 +44,13 @@ D_OUT = 10                   # The expected number of classes/variables for outp
 OUTPUT_TYPE = 'multilabel'   # options are 'regr', 'softmax', or 'multilabel'
 CUSTOM_HEAD = None           # list of tensorflow layers to be used as a custom prediction head
 SELF_SUPERVISED_TRAINING = True  # if True, self-supervised training occurs. If False, fine-tune training (full network training) occurs instead
-SELF_SUPERVISED_TRAIN_EPOCHS = 10  # number of epochs during self-supervise training
+SELF_SUPERVISED_TRAIN_EPOCHS = 3  # number of epochs during self-supervise training
 
 ''' self-supervised mask options '''
 MASK_TYPE = 'seq'           # valid options are: 'seq' (random time sequences), 'feature' (entire rows), 'time' (entire columns), 'forecast' (last columns), 'noise' (random throughout)
 MASK_R = 0.15               # roughly the proportion of values that are masked for each sample during self-supervised training
-MASK_LM = 4                 # for 'seq' option, the average length of masked sequences
-MASK_RANDOM_TYPE_LIST = None # a list of strings corresponding to the set of desired mask types, one of which is randomly chosen per batch
+MASK_LM = 6                 # for 'seq' option, the average length of masked sequences
+MASK_RANDOM_TYPE_LIST = ['seq', 'feature', 'time'] # a list of strings corresponding to the set of desired mask types, one of which is randomly chosen per batch
 MASK_ALL_BATCH_SAME = False  # if True, all samples in a batch will have the same mask (the first of the batch). If False, random mask is produced for each sample
 
 
@@ -86,7 +86,7 @@ TRAIN_REPLACE_WITH_MIXED_STEM = False      # if true, replaces the normal full s
     # Depracated train options INCLUDE_LR_CHANNELS = False # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
 
 TRAIN_BATCH_SIZE      = 256      # the number of individual images (slices of the spectrogram: windows and their contexts) before the model is updated
-TRAIN_LR_INIT         = 1e-4
+TRAIN_LR_INIT         = 1e-5
 TRAIN_LR_END          = 5e-6
 TRAIN_WARMUP_EPOCHS   = 1
 TRAIN_EPOCHS          = 50
@@ -107,7 +107,7 @@ BACKGROUND_NOISE_CHANCE    = 0.25
 GAIN_CHANCE                = 0.25
 MP3_COMPRESSION_CHANCE     = 0.25
 BIN_DROPOUT_CHANCE         = 0.25
-BIN_DROPOUT_RATIO          = 0.05  # percentage of bins that will be set to 0 if bin dropout chance is successful
+BIN_DROPOUT_RATIO          = 0.05  # percentage of mel spectro bins that will be set to 0 if bin dropout chance is successful
 S_NOISE_CHANCE             = 0.05
 S_NOISE_RANGE_WIDTH        = 0.1   # width of range of numbers around 1 that S_noise will choose from to multiply by to create noise (0.1 ==> pulls from 0.95 to 1.05)
 
@@ -115,7 +115,7 @@ S_NOISE_RANGE_WIDTH        = 0.1   # width of range of numbers around 1 that S_n
 ''' validation options '''
 VAL_DATA_AUG         = True
 VAL_SONG_LIST        = ['track_8', 'sow', 'let_it_enfold_you', 'the_kill', 'misery_business', 'four_years', 'hair_of_the_dog', 'best_of_me', 'mookies_last_christmas', 'coffeeshop_soundtrack' ]     # the songs that will be not used in the training set but instead in the validation set
-VAL_BATCH_SIZE       = 256
+VAL_BATCH_SIZE       = 128
 # Spleeter validation options
 VAL_USE_DRUM_STEM           = TRAIN_USE_DRUM_STEM # if true, use the drum stem slices from the MAT_df to help with validating the model
 VAL_INCLUDE_DRUM_STEM       = True      # if true, uses spleeter to separate out the drum stem and then append it as an additional channel

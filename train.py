@@ -21,7 +21,7 @@ from src.dataset import Dataset
 from src.utils import MusicAlignedTab, create_FullSet_df, clean_labels, collapse_class, one_hot_encode, create_configs_dict
 from src.utils import save_drum_tabber_model, detect_peaks
 from src.model import create_DrumTabber
-from src.tsts import create_mask
+from src.tst import create_mask
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -45,12 +45,176 @@ def main(custom_model_name = None):
         try: tf.config.experimental.set_memory_growth(gpus[0], True)
         except RuntimeError: pass
 
+
+
+
     # create logs directory and the tf.writer log
     logdir = os.path.join(TRAIN_LOGDIR, custom_model_name) if custom_model_name is not None else os.path.join(TRAIN_LOGDIR, 'unnamed_model')
     if os.path.exists(logdir):
         shutil.rmtree(logdir)
     train_writer = tf.summary.create_file_writer(os.path.join(logdir,'train'))
     val_writer = tf.summary.create_file_writer(os.path.join(logdir,'val'))
+
+
+    ''' TODO: Integrate this specialized training loop into normal full code below'''
+    '''  TEMPORARY FULL TRAINING LOOP FOR SELF SUPERVISEDTRAINING '''
+    if MODEL_TYPE == 'TST' and SELF_SUPERVISED_TRAINING == True:
+
+        def compute_loss(prediction, target, sstraining, mask=None, output_type='regr'):
+            '''
+            Computes loss for a batch
+
+            Args:
+                prediction [tf.Tensor]: output of the current model
+                target [np.ndarray]: the true labels/values of the current model. The "right answers" that hopefully the model has predicted correctly
+                sstraining [bool]: If True, self supervised training loss is computed and returned. If False, depends on output_type
+                mask [np.ndarray]: Default None. If not none, then in the self-supervised training part and use this mask to hide the previously unmasked values from loss function
+                output_type [str]: One of the following options:
+                    'regr' - for regression problem, predicting values (single or multi-variable output)
+                    'softmax' - for single label classification (single or multi-class)
+                    'multilabel' - for multi-label classification (multi-class necessarily)
+
+            Returns:
+                tf.Tensor: tensor of the same shape as input but with compent-wise losses calculated
+                           If sslearning = True, will not be the same shape.
+
+            '''
+            if sstraining and mask is not None:
+                prediction, target = prediction[mask], target[mask]     # loss is calculated based ONLY on predicted corrupted values. Thus use mask to select only those values from pred and target
+                losses = tf.keras.losses.MeanSquaredError()(target, prediction) if not tf.equal(tf.size(prediction), 0) else tf.Variable(0.0)  # ensures no nan from NO masked values (thus no masked value loss to compute)
+
+            else:
+                if   output_type == 'regr':   losses = tf.keras.losses.MeanSquaredError()(target, prediction)
+                elif output_type == 'softmax':  losses = tf.keras.losses.CategoricalCrossentropy()(target, prediction)   # assumes single-label one hot encoding
+                elif output_type == 'multilabel': losses = tf.keras.losses.BinaryCrossentropy()(target,prediction)
+
+            return losses
+
+        def train_model(model, epochs, train_set, validation_set, optimizer):
+            '''
+            Simple custom training loop using tf.GradientTape()
+
+            Args:
+                model [keras.Model]: the model to be trained
+                epochs [int]: number of epochs to run this training session
+                train_set [tf.data.Dataset or iterable]: dataset used to train the model
+                validation_set [tf.data.Dataset or iterable]: dataset used to validate the model
+                optimizer [tf.keras.optimizers]: optimizer object used to optimize the model. Probably will be adam.
+
+            Returns:
+                None (but the model object will have trained weights)
+            '''
+
+            for epoch in range(epochs):                            # loop over the number of epochs
+                epoch_loss = 0
+                for batch, target in train_set.batch(TRAIN_BATCH_SIZE, drop_remainder=True):             # getting the different training batches
+                    if model.self_supervised_training:  # input batch corruption via masks is needed
+                        mask = create_mask(batch, r= MASK_R, lm=MASK_LM, mask_type=MASK_TYPE, random_type_list = MASK_RANDOM_TYPE_LIST, all_batch_same=MASK_ALL_BATCH_SAME)
+                        target = batch                      # target IS the original batch due to the goal of reconstruction of corrupted input
+                        batch = np.multiply(batch, ~mask)   # CORRUPTION STEP. The ~ (logical not) is necessary because mask outputs True for where values should be zeroed
+                    else: mask=None                         # no mask needed for fine- tune, labeled training
+                    # make predictions and calculate losses
+                    with tf.GradientTape() as tape:
+                        prediction = model(batch)           # calling the model object = running inference on the passed argument (the data in the batch)
+                        losses = compute_loss(prediction, target, model.self_supervised_training, mask, output_type= OUTPUT_TYPE)
+                        batch_loss = tf.math.reduce_mean(losses)
+                    # update the model's weights using the loss and gradients
+                    gradients = tape.gradient(batch_loss, model.trainable_variables, unconnected_gradients=tf.UnconnectedGradients.ZERO)   # unconnected gradients = zero business is mainly used to suppress a warning
+                    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+                    epoch_loss += batch_loss
+                print(f'Epoch {epoch+1} loss: {epoch_loss}')
+
+        def normalize_spectro(array):
+            '''
+            Helper function to normalize the spectrogram array
+            '''
+            return (array+80.0) / 80.0
+
+        rng = np.random.default_rng()  # for random purposes later
+        drum_tabber = create_DrumTabber(n_features = D_FEATURES_IN,
+                                        n_classes = D_OUT,
+                                        activ = ACTIV,
+                                        training = True)
+        print('drum_tabber model has been built!')
+        drum_tabber.build_graph(raw_shape=(D_FEATURES_IN, LEN_SEQ)).summary()
+
+        optimizer = tf.keras.optimizers.Adam()
+        # get the list of artists in the spectros folder: the folder containing all the preprocessed spectrograms
+        with os.scandir(SPECTROS_PATH) as f:
+            artist_list = [entry.name for entry in f]
+
+
+        previous_n_artist_loss = [1000,1000,1000,1000,1000]    # tracking the previous 5 losses to save the model checkpoints properly
+        min_mean_n_artist_loss = 500.0                         # start as big number
+        for epoch in range(SELF_SUPERVISED_TRAIN_EPOCHS):
+            artist_count, total_num_artist = 0, len(artist_list)    # counter for number of total artists gone through in this Epoch
+            epoch_loss = 0.0
+            for artist in artist_list:          # go through each artist in the spectro folder
+                artist_count += 1
+                artist_loss = 0.0
+                artist_path = os.path.join(SPECTROS_PATH, artist)
+                with os.scandir(artist_path) as scan:
+                    npz_paths = [entry.path for entry in scan]   # the full paths leading to the .npz files
+                rng.shuffle(npz_paths)    # shuffle the order that the albums are loaded in
+                for npz in npz_paths:     # for each album in a single artists
+                    album_name = os.path.splitext(os.path.basename(npz))[0]
+                    album_loss = 0.0     # tracking the loss of the current album
+                    with np.load(npz) as loaded:
+                        songs = loaded.files    # gets the list of songs/keys in the npz file
+                        rng.shuffle(songs)     # shuffle order of songs
+                        array_list = []
+                        for song in songs:
+                            spectro = loaded[song]    # grab the numpy array stored at this song
+                            # roll along the time step dimension to randomly "start" the song spectro in a different place each epoch
+                            spectro = np.roll(spectro, shift = rng.integers(low=0, high=spectro.shape[-1]), axis=-1)
+                            array_list.append(spectro)
+                    album_spectro = np.concatenate(array_list, axis=-1) # concatenate along time step dimensions, lining up all song spectros in an album
+                    album_spectro = normalize_spectro(album_spectro)
+                    num_full_slices = album_spectro.shape[-1] // LEN_SEQ   # number of full slices that can be Produced
+                    # TODO: make a more elegant try/catch block here to ensure that num_full_slices is at least one (pad values?)
+                    assert num_full_slices > 0, 'The album spectros is, for some reason, not big enough for one LEN_SEQ'
+                    # split along time step dimension in LEN_SEQ wide samples, stack the sample list into the first (batch) dimension
+                    album_spectro = np.stack(np.split(album_spectro[...,:num_full_slices*LEN_SEQ], num_full_slices, axis=-1) , axis=0)
+                    album_spectro = tf.data.Dataset.from_tensor_slices(album_spectro)   # make it into a tf.Dataset object
+                    album_spectro = album_spectro.shuffle(buffer_size=2048).batch(TRAIN_BATCH_SIZE, drop_remainder = False)
+                    num_batches = len(album_spectro)
+                    for batch in album_spectro:
+                        if drum_tabber.self_supervised_training:
+                            mask = create_mask(batch, r=MASK_R, lm=MASK_LM, mask_type=MASK_TYPE,
+                                               random_type_list = MASK_RANDOM_TYPE_LIST, all_batch_same=MASK_ALL_BATCH_SAME)
+                            target = batch
+                            batch = np.multiply(batch, ~mask)
+                        else:
+                            mask = None
+                            target = batch
+                        with tf.GradientTape() as tape:
+                            prediction = drum_tabber(batch)
+                            losses = compute_loss(prediction, target, drum_tabber.self_supervised_training, mask, output_type = OUTPUT_TYPE)
+                            batch_loss = tf.math.reduce_mean(losses)
+                        gradients = tape.gradient(batch_loss, drum_tabber.trainable_variables, unconnected_gradients=tf.UnconnectedGradients.ZERO)   # unconnected gradients = zero business is mainly used to suppress a warning
+                        optimizer.apply_gradients(zip(gradients, drum_tabber.trainable_variables))
+                        album_loss += batch_loss
+                    album_loss = album_loss / num_batches
+                    artist_loss += album_loss
+                artist_loss = artist_loss / len(npz_paths)
+                print('Epoch{:2}, Artist{:3}: {:7.5f} {}'.format(epoch+1, artist_count, artist_loss, artist))
+                # dealing with tracking artists losses to determine if we save the model weights mid training
+                previous_n_artist_loss.insert(0, artist_loss.numpy())
+                previous_n_artist_loss.pop()
+                if (sum(previous_n_artist_loss) / len(previous_n_artist_loss) < min_mean_n_artist_loss) and TRAIN_SAVE_CHECKPOINT_MAX_BEST: # lower mean case
+                    min_mean_n_artist_loss = sum(previous_n_artist_loss) / len(previous_n_artist_loss)
+                    save_checkpoint_path = os.path.join(TRAIN_CHECKPOINTS_FOLDER, MODEL_TYPE + custom_model_name)
+                    drum_tabber.save_weights(filepath=save_checkpoint_path, overwrite = True)
+                epoch_loss += artist_loss
+            print()
+            print('Epoch {} Total Loss {}'.format(epoch+1,epoch_loss ))
+            print()
+            rng.shuffle(artist_list) # shuffle artist list to prepare for next epoch
+
+        return drum_tabber
+
+    '''  END OF TEMPORARY FULL TRAINING LOOP FOR SELF SUPERVISED TRAINING  '''
+
 
     if TRAIN_FULLSET_MEMORY:       # able to create and load the entire FullSet into memory
         FullSet = create_FullSet_df(SONGS_PATH)
@@ -92,9 +256,10 @@ def main(custom_model_name = None):
     total_steps = TRAIN_EPOCHS * steps_per_epoch
 
     # load the model to be trained, based on configs.py options
+    activation_for_DrumTabber = ACTIV if MODEL_TYPE == 'TST' else 'relu'
     drum_tabber = create_DrumTabber(n_features = configs_dict['num_features'],
                                     n_classes = configs_dict['num_classes'],
-                                    activ = 'relu',
+                                    activ = activation_for_DrumTabber,
                                     training = True)  # initial randomized weights of a keras model
     print('train.py main(): drum_tabber model created!')
     print('train.py main(): ', drum_tabber.summary())

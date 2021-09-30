@@ -10,7 +10,7 @@
 
 import numpy as np
 import tensorflow as tf
-
+from tensorflow.keras.layers import Dense, Flatten, BatchNormalization, MultiHeadAttention, Dropout
 
 def create_mask(arr, r= 0.15, lm=4, mask_type="seq", random_type_list = None, all_batch_same=False):
     '''
@@ -39,7 +39,7 @@ def create_mask(arr, r= 0.15, lm=4, mask_type="seq", random_type_list = None, al
 
     if random_type_list is not None:                # case where mask type is desired to be randomly determined
         list_of_mask_types = ['seq', 'feature', 'time', 'forecast', 'noise']
-        valid_list = list(set(random_type_list).intersection(list_of_mask_types))   # allow only intersection of real mask types
+        valid_list = [mt for mt in random_type_list if mt in list_of_mask_types]   # preserves relative probabilities supplied by multiple instances of any valid mask type
         assert len(valid_list) > 0, "No valid mask type options in the passed list of mask types. Must contain at least one of ['seq', 'feature', 'time', 'forecast', 'noise']"
         mask_type = rng.choice(valid_list)  # choose one from the valid list of mask types
 
@@ -149,7 +149,7 @@ class TimeSeriesTransformer(tf.keras.Model):
 
         self.pe_layer = PositionalEncodingLayer(d_model, len_seq)  # learnable positional encoding layer
 
-        self.encoder = TransformerEncoder(d_model, len_seq, n_encoder_layers = 3, n_heads=n_heads, d_ffn=d_ffn, activ = activ, mha_bias = mha_bias,
+        self.encoder = TransformerEncoder(d_model, len_seq, n_encoder_layers = n_encoder_layers, n_heads=n_heads, d_ffn=d_ffn, activ = activ, mha_bias = mha_bias,
                   attention_dropout_p = attention_dropout_p, ffn_dropout_p = ffn_dropout_p)
 
         self.self_supervised_head = SelfSupervisedLayer(d_features_in, len_seq, d_model)
