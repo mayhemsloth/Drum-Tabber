@@ -292,7 +292,7 @@ def create_DrumTabber(n_features, n_classes, activ = 'relu', training = False):
 
             for layer in dn_model.layers:
                 layer.trainable = False    # sets parameters to False to train only the top/last layer of the network (added after this)
-                if TRAIN_FINE_TUNE: # and ('conv5' in layer.name):
+                if TRAIN_FINE_TUNE_DENSENET: # and ('conv5' in layer.name):
                     layer.trainable = True    # fine-tuning layers specified by if statement
 
             output = Flatten()(dn_model.layers[-1].output)

@@ -20,8 +20,9 @@ from pydub import AudioSegment   # main class from pydub package used to upload 
 import IPython.display as ipd    # ability to play audio in Jupyter Notebooks if needed
 import matplotlib.pyplot as plt
 
-from src.configs import *
 
+from src.configs import *
+from src.utils import clean_labels, collapse_class, one_hot_encode, create_FullSet_df
 
 # START OF VISUAL DISPLAY FUNCTIONS
 

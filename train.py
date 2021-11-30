@@ -38,15 +38,14 @@ def main(custom_model_name = None):
 
     # check configs compatibility with labeling window
     assert NEGATIVE_WINDOW_FRACTION + POSITIVE_WINDOW_FRACTION > HOP_SIZE/WINDOW_SIZE, 'Total labeling window fraction is not greater than HOP_SIZE/WINDOW_SIZE. Will not properly label data. Change WINDOW_FRACTION or HOP_SIZE and WINDOW_SIZE'
+    if MODEL_TYPE == 'TST':
+        assert N_CONTEXT_PRE + 1 + N_CONTEXT_POST == LEN_SEQ, 'Length of sequence (LEN_SEQ) for expected TST model input is not equal to pre_context+1+post_context. Please change configs to fix input shape.'
 
     # set GPU usage
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if len(gpus) > 0:
         try: tf.config.experimental.set_memory_growth(gpus[0], True)
         except RuntimeError: pass
-
-
-
 
     # create logs directory and the tf.writer log
     logdir = os.path.join(TRAIN_LOGDIR, custom_model_name) if custom_model_name is not None else os.path.join(TRAIN_LOGDIR, 'unnamed_model')
@@ -57,7 +56,7 @@ def main(custom_model_name = None):
 
 
     ''' TODO: Integrate this specialized training loop into normal full code below'''
-    '''  TEMPORARY FULL TRAINING LOOP FOR SELF SUPERVISEDTRAINING '''
+    '''  TEMPORARY FULL TRAINING LOOP FOR SELF SUPERVISED TRAINING USING TST '''
     if MODEL_TYPE == 'TST' and SELF_SUPERVISED_TRAINING == True:
 
         def compute_loss(prediction, target, sstraining, mask=None, output_type='regr'):
@@ -130,19 +129,19 @@ def main(custom_model_name = None):
             '''
             return (array+80.0) / 80.0
 
-        rng = np.random.default_rng()  # for random purposes later
+        rng = np.random.default_rng()  # for random number creation purposes later
         drum_tabber = create_DrumTabber(n_features = D_FEATURES_IN,
                                         n_classes = D_OUT,
                                         activ = ACTIV,
                                         training = True)
         print('drum_tabber model has been built!')
-        drum_tabber.build_graph(raw_shape=(D_FEATURES_IN, LEN_SEQ)).summary()
+        drum_tabber.build_graph(raw_shape=(D_FEATURES_IN, LEN_SEQ)).summary()   # print out summary of model architecture
 
         optimizer = tf.keras.optimizers.Adam()
+        optimizer.lr.assign(SELF_SUPERVISED_TRAIN_LR)
         # get the list of artists in the spectros folder: the folder containing all the preprocessed spectrograms
         with os.scandir(SPECTROS_PATH) as f:
             artist_list = [entry.name for entry in f]
-
 
         previous_n_artist_loss = [1000,1000,1000,1000,1000]    # tracking the previous 5 losses to save the model checkpoints properly
         min_mean_n_artist_loss = 500.0                         # start as big number
@@ -213,7 +212,7 @@ def main(custom_model_name = None):
 
         return drum_tabber
 
-    '''  END OF TEMPORARY FULL TRAINING LOOP FOR SELF SUPERVISED TRAINING  '''
+    '''  END OF TEMPORARY FULL TRAINING LOOP FOR SELF SUPERVISED TRAINING USING TST '''
 
 
     if TRAIN_FULLSET_MEMORY:       # able to create and load the entire FullSet into memory
@@ -228,11 +227,11 @@ def main(custom_model_name = None):
                                  hihat_classes = HIHAT_CLASSES,
                                  cymbal_classes = CYMBAL_CLASSES)
         MusicAlignedTab.labels_summary(FullSet)   # prints a labels summary out to screen
-        FullSet_encoded = one_hot_encode(FullSet)
+        FullSet_encoded = one_hot_encode(FullSet)   # multi hot encodes the FullSet tabs
         configs_dict = create_configs_dict(FullSet_encoded)
         print('train.py main(): FullSet_encoded created!')
     else:
-        FullSet_encoded = None
+        FullSet_encoded = None  # TODO: ability to process the case where you can't load the FullSet into memory
 
     # create the iterable Dataset objects for training
     train_set = Dataset('train', FullSet_encoded)
@@ -262,7 +261,11 @@ def main(custom_model_name = None):
                                     activ = activation_for_DrumTabber,
                                     training = True)  # initial randomized weights of a keras model
     print('train.py main(): drum_tabber model created!')
-    print('train.py main(): ', drum_tabber.summary())
+    # printing summary
+    if MODEL_TYPE == 'TST':
+        print('train.py main(): ', drum_tabber.build_graph(raw_shape=(D_FEATURES_IN, LEN_SEQ)).summary())
+    else:
+        print('train.py main(): ', drum_tabber.summary())
 
     if TRAIN_FROM_CHECKPOINT and len(TRAIN_CHECKPOINT_MODEL_NAME) != 0:
         try:
@@ -300,7 +303,7 @@ def main(custom_model_name = None):
             elif SHIFT_TO_DB:    # not including the fto differential, so just normalize the spectrogram directly if we shifted to db
                 spectrogram = (spectrogram + 40)/40  # DenseNet requires "pixel values" [-1,1], and spectrogram was [-80,0]
 
-        elif model_type in ['Context-CNN', 'TimeFreq-CNN']:
+        elif model_type in ['TST', 'Context-CNN', 'TimeFreq-CNN']:
             if INCLUDE_FO_DIFFERENTIAL:
                 # TODO: normalize the top half of the n_features dimension. Bottom half is already normalized via the FO_DIFF concatenation step
                 pass
@@ -309,7 +312,7 @@ def main(custom_model_name = None):
 
         ''' RESHAPE TO INPUT ARRAY '''
         # TODO: Finish the other model type options when they become available
-        if model_type in ['Context-CNN', 'TimeFreq-CNN', 'TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
+        if model_type in ['TST', 'Context-CNN', 'TimeFreq-CNN', 'TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
 
             pre_context, post_context = N_CONTEXT_PRE, N_CONTEXT_POST
             input_width = pre_context + 1 + post_context
@@ -329,7 +332,7 @@ def main(custom_model_name = None):
                     input_array[idx, :,:] = spectrogram[:, idx-pre_context : idx+post_context+1]
 
             # create the correct number of channels to be made for the input array stacking
-            if model_type in ['Context-CNN', 'TimeFreq-CNN']:
+            if model_type in ['TST', 'Context-CNN', 'TimeFreq-CNN']:
                 channel_number = 1
             elif model_type in ['TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
                 channel_number = 3  # simulating RGB color channels
@@ -353,7 +356,7 @@ def main(custom_model_name = None):
         n_classes, n_windows = target.shape
 
         # TODO: Finish the other model type options when they become available
-        if model_type in ['Context-CNN', 'TimeFreq-CNN',  'TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
+        if model_type in ['TST', 'Context-CNN', 'TimeFreq-CNN',  'TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
             target_array = target.T  # only need the transpose because the target array is 2D (n_classes, n_windows)
             # and we want (n_windows, n_classes)
 
@@ -372,7 +375,7 @@ def main(custom_model_name = None):
             label_ref_df [Dataframe]:
             model_type [str]:
             tolerance_window [int]:
-            hope_size [int]:
+            hop_size [int]:
             sr [int]:
 
         Returns:
@@ -432,7 +435,7 @@ def main(custom_model_name = None):
             tf.Tensor: Tensor of the same shape as logits with component-wise losses calculated
         '''
 
-        if model_type in ['Context-CNN', 'TimeFreq-CNN',  'TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
+        if model_type in ['TST', 'Context-CNN', 'TimeFreq-CNN',  'TL-DenseNet121', 'TL-DenseNet169', 'TL-DenseNet201']:
             #losses = tf.nn.sigmoid_cross_entropy_with_logits(labels = target_array.astype(np.float32), logits = prediction)
             '''
             JULY 8th, 2021: I realized in my preparation for Transformer Implementation that I did not implement the loss function correctly.
@@ -504,6 +507,8 @@ def main(custom_model_name = None):
 
             # converts the current spectrogram into the correct input array
             input_array = spectro_to_input_array(spectrogram[:,:,channel], MODEL_TYPE) # exactly the current output for input into model. Check function for dimensions of input_array
+            if MODEL_TYPE == 'TST':
+                input_array = np.squeeze(input_array, axis=-1)   # fixing the fact that CNN technically uses an "image" whcih is 3D array, but my time series transformer takes in 2D array
             target_array = target_to_target_array(target[:,:,channel], MODEL_TYPE)
             num_examples = input_array.shape[0]    # total number of examples in this song/channel
 
@@ -545,7 +550,7 @@ def main(custom_model_name = None):
 
                     if set_type == 'train':   # if we are in a train set, update the model
                         # apply gradients to update the model, the backward pass
-                        gradients = tape.gradient(batch_loss, drum_tabber.trainable_variables)
+                        gradients = tape.gradient(batch_loss, drum_tabber.trainable_variables, unconnected_gradients=tf.UnconnectedGradients.ZERO)
                         optimizer.apply_gradients(zip(gradients, drum_tabber.trainable_variables))
 
                 prediction_list.append(prediction.numpy())
@@ -680,7 +685,7 @@ def main(custom_model_name = None):
         saved_model_name = custom_model_name
     save_drum_tabber_model(drum_tabber = drum_tabber, model_name = saved_model_name, saved_models_path = SAVED_MODELS_PATH, configs_dict = configs_dict)
 
-    return None
+    return drum_tabber
 
 if __name__ == '__main__':
     main()

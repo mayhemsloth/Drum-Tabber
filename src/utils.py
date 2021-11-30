@@ -1132,6 +1132,21 @@ def create_configs_dict(df):
     num_channels = 1  #TODO: Fix this with respect to spleeter integration
     month_date = date.today().strftime("-%b-%d")
 
+    if MODEL_TYPE == 'TST':
+        tst_dict = {'d_features_in' : D_FEATURES_IN,
+                    'len_seq'  : LEN_SEQ,
+                    'd_model' : D_MODEL,
+                    'n_heads' : N_HEADS,
+                    'n_encoder_layers' : N_ENCODER_LAYERS,
+                    'd_ffn' : D_FFN,
+                    'activ' : ACTIV,
+                    'mha_bias' : MHA_BIAS,
+                    'attention_dropout_p' : ATTENTION_DROPOUT_P,
+                    'ffn_dropout_p': FFN_DROPOUT_P
+                    }
+    else:
+        tst_dict = None
+
     configs_dict = {'class_names_dict': {idx: val for idx, val in enumerate(class_names)},
                     'num_classes'   : len(class_names),
                     'num_features'  : num_features,
@@ -1152,7 +1167,8 @@ def create_configs_dict(df):
                                              'keep_toms_seperate' : KEEP_TOMS_SEPARATE, 'hihat_classes' : HIHAT_CLASSES, 'cymbal_classes' : CYMBAL_CLASSES},
                     'month_date' : month_date,
                     'training_dict' : {'train_data_aug' : TRAIN_DATA_AUG, 'train_epochs': TRAIN_EPOCHS, 'include_drum_stem': TRAIN_INCLUDE_DRUM_STEM,
-                                        'train_batch_size': TRAIN_BATCH_SIZE, 'train_fine_tune': TRAIN_FINE_TUNE}
+                                        'train_batch_size': TRAIN_BATCH_SIZE, 'train_fine_tune_densenet': TRAIN_FINE_TUNE_DENSENET},
+                    'tst_dict': tst_dict
                     }
 
     return configs_dict

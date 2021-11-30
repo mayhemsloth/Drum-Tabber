@@ -22,7 +22,7 @@ SAMPLE_RATE = 44100  # TODO: need to delete this whenever I finally implement th
 
 MODEL_TYPE = 'TST'    # the model type desired to build. Possible choices are 'Context-CNN', 'TimeFreq-CNN', 'TL-DenseNet121/169/201'
 ''' CNN model options '''
-N_CONTEXT_PRE  = 15    # the number of context windows included before the target window in any context model type
+N_CONTEXT_PRE  = 16    # the number of context windows included before the target window in any context model type
 N_CONTEXT_POST = 15    # the number of context windows included after the target window in any context model type
 TOLERANCE_WINDOW = 20  # in ms, the amount of time that is allowable left and right of sample labelled as correct. Note that a 200 BPM 16th note grid corresponds to 75 ms duration. 150 BPM is 100 ms duration
 SHIFT_TO_DB = True       # changes the power spectrum to db instead of... whatever it is in when you get the output from lb.melspectrogram
@@ -39,12 +39,13 @@ MHA_BIAS = True       # if False, does not use a bias vector for multihead atten
 ATTENTION_DROPOUT_P = 0.1  # probability of dropout in the attention network dropout layer
 FFN_DROPOUT_P = 0.1     # probability of dropout in the feed forward dropout layer
 
-''' training and output options '''
+''' self-supervised training and output options '''
 D_OUT = 10                   # The expected number of classes/variables for output
 OUTPUT_TYPE = 'multilabel'   # options are 'regr', 'softmax', or 'multilabel'
 CUSTOM_HEAD = None           # list of tensorflow layers to be used as a custom prediction head
-SELF_SUPERVISED_TRAINING = True  # if True, self-supervised training occurs. If False, fine-tune training (full network training) occurs instead
+SELF_SUPERVISED_TRAINING = False  # if True, self-supervised training occurs. If False, fine-tune training (full network training) occurs instead
 SELF_SUPERVISED_TRAIN_EPOCHS = 3  # number of epochs during self-supervise training
+SELF_SUPERVISED_TRAIN_LR = 1e-5  # the learning constant learning rate for the self supervised training of TST model
 
 ''' self-supervised mask options '''
 MASK_TYPE = 'seq'           # valid options are: 'seq' (random time sequences), 'feature' (entire rows), 'time' (entire columns), 'forecast' (last columns), 'noise' (random throughout)
@@ -73,9 +74,9 @@ TRAIN_SAVE_CHECKPOINT_ALL      = False      # if true, saves all validation mode
 TRAIN_FULLSET_MEMORY           = True       # if true, utilizes the FullSet dataframe in memory to continuously pull from during training/val. ASSUMES FullSet (all songs) can be held in memory
 TRAIN_LOGDIR                   = 'logs'
 TRAIN_CHECKPOINTS_FOLDER       = 'models/checkpoints'
-TRAIN_FROM_CHECKPOINT          = False
-TRAIN_CHECKPOINT_MODEL_NAME    = ''
-TRAIN_FINE_TUNE                = False
+TRAIN_FROM_CHECKPOINT          = True
+TRAIN_CHECKPOINT_MODEL_NAME    = 'TST-Sep-30'
+TRAIN_FINE_TUNE_DENSENET       = False
 # Spleeter train options
 TRAIN_USE_DRUM_STEM           = True     # if true, use the drum stem slices from the MAT_df to help with training the model
 TRAIN_INCLUDE_DRUM_STEM       = True     # if true, uses the separated out drum stem and then append it as an additional channel
@@ -86,10 +87,10 @@ TRAIN_REPLACE_WITH_MIXED_STEM = False      # if true, replaces the normal full s
     # Depracated train options INCLUDE_LR_CHANNELS = False # if true, uses the Left and Right channels as their own mono channel to include in the data set (whichever data set that is)
 
 TRAIN_BATCH_SIZE      = 256      # the number of individual images (slices of the spectrogram: windows and their contexts) before the model is updated
-TRAIN_LR_INIT         = 1e-5
+TRAIN_LR_INIT         = 1e-4
 TRAIN_LR_END          = 5e-6
-TRAIN_WARMUP_EPOCHS   = 1
-TRAIN_EPOCHS          = 50
+TRAIN_WARMUP_EPOCHS   = 0
+TRAIN_EPOCHS          = 30
 
 
 ''' augmentation options '''
@@ -113,9 +114,9 @@ S_NOISE_RANGE_WIDTH        = 0.1   # width of range of numbers around 1 that S_n
 
 
 ''' validation options '''
-VAL_DATA_AUG         = True
+VAL_DATA_AUG         = False
 VAL_SONG_LIST        = ['track_8', 'sow', 'let_it_enfold_you', 'the_kill', 'misery_business', 'four_years', 'hair_of_the_dog', 'best_of_me', 'mookies_last_christmas', 'coffeeshop_soundtrack' ]     # the songs that will be not used in the training set but instead in the validation set
-VAL_BATCH_SIZE       = 128
+VAL_BATCH_SIZE       = 256
 # Spleeter validation options
 VAL_USE_DRUM_STEM           = TRAIN_USE_DRUM_STEM # if true, use the drum stem slices from the MAT_df to help with validating the model
 VAL_INCLUDE_DRUM_STEM       = True      # if true, uses spleeter to separate out the drum stem and then append it as an additional channel

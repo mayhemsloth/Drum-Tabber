@@ -154,9 +154,9 @@ class TimeSeriesTransformer(tf.keras.Model):
 
         self.self_supervised_head = SelfSupervisedLayer(d_features_in, len_seq, d_model)
 
-        self.fine_tune_head = self.create_fine_tune_layer(output_type, d_out, custom_head)
+        self.fine_tune_head = self.create_fine_tune_layer(output_type, d_out, d_ffn, activ, custom_head)
 
-    def create_fine_tune_layer(self, output_type, d_out, custom_head = None):
+    def create_fine_tune_layer(self, output_type, d_out, d_ffn, activ, custom_head = None):
         '''
         Helper function to create the fine tune layer/head
 
@@ -166,6 +166,8 @@ class TimeSeriesTransformer(tf.keras.Model):
                 'softmax' - for single label classification (single or multi-class)
                 'multilabel' - for multi-label classification (multi-class necessarily)
             d_out [int]: the number of target classes or values to predict
+            d_ffn [int]: dimension of the dense network layers before the final layer
+            activ [str]: activation function used in the fine tune layers before the final output layer
             custom_head [tf.layer]: Default None. Allows a list of layers to be passed in to be used as the final head for prediction
 
         Returns:
@@ -176,12 +178,16 @@ class TimeSeriesTransformer(tf.keras.Model):
         if custom_head is not None:  # case where a custom head (stack of layers) is passed to be used as the custom head
             fine_tune_layers = custom_head
 
-        else:     # standard Dense layer is used to convert from flattened encoder feature representation to final predictions
+        else:     # standard 2-layer dense nn Dense layer is used to convert from flattened encoder feature representation to final predictions
             fine_tune_layers = [Flatten()]  # always need a flatten layer initially
-            if output_type == 'regr':         dense_activ = None    # no activation because we want values directly
-            elif output_type == 'softmax':    dense_activ = 'softmax'    # force exclusive probabilities
-            elif output_type == 'multilabel': dense_activ = 'sigmoid'    # guess a probability individually for each class
-            fine_tune_layers.append(Dense(d_out, activation = dense_activ))      # Dense layer with d_out classes, activated by the appropriate function
+            fine_tune_layers.append(Dense(d_ffn, activation = activ))  # first of 2-layer Dense with d_ffn number of units
+            fine_tune_layers.append(BatchNormalization())
+            fine_tune_layers.append(Dense(d_ffn, activation = activ))  # second of 2-layer Dense with d_ffn number of units
+            fine_tune_layers.append(BatchNormalization())
+            if output_type == 'regr':         final_activ = None    # no activation because we want values directly
+            elif output_type == 'softmax':    final_activ = 'softmax'    # force exclusive probabilities
+            elif output_type == 'multilabel': final_activ = 'sigmoid'    # guess a probability individually for each class
+            fine_tune_layers.append(Dense(d_out, activation = final_activ))      # Dense layer with d_out classes, activated by the appropriate function
 
         return fine_tune_layers
 
